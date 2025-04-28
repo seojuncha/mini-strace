@@ -1,5 +1,5 @@
-CC = gcc
-CFLAGS = -Wall -g
+CC = arm-linux-gnueabihf-gcc
+CFLAGS = -Wall -g -static
 
 mini-strace: mini-strace.o
 	$(CC) $(CFLAGS) -o mini-strace mini-strace.o

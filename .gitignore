@@ -54,6 +54,3 @@ dkms.conf
 # Executable file
 hello
 mini-strace
-
-# vscode file
-.vscode

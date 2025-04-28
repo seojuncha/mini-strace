@@ -1,8 +1,7 @@
 #include <signal.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <linux/ptrace.h>
+#include <sys/ptrace.h>
 #include <sys/types.h>   // pid_t
 #include <sys/user.h>
 #include <sys/wait.h>
@@ -13,6 +12,8 @@ int main(int argc, char *argv[]) {
   int ret;
   int status;
   pid_t pid;
+
+  printf("start!\n");
 
   if (argc < 2) {
     fprintf(stderr, "not enought arguments\n");
@@ -84,25 +85,25 @@ int main(int argc, char *argv[]) {
             }
             break;
           case SIGTRAP | 0x80:
-            struct ptrace_syscall_info info;
-            int info_size = sizeof(struct ptrace_syscall_info);
-            if (ptrace(PTRACE_GET_SYSCALL_INFO, pid, &info_size, &info) < 0) {
-              perror("syscall getinfo");
-              exit(1);
-            }
-            switch(info.op) {
-              case PTRACE_SYSCALL_INFO_ENTRY:
-                printf(" [%d] entry: %llu\n", i++, info.entry.nr);
-                break;
-              case PTRACE_SYSCALL_INFO_EXIT:
-                // printf(" exit: %lld\n", info.exit.rval);
-                break;
-              case PTRACE_SYSCALL_INFO_SECCOMP:
-                // printf(" setcomp: %llu\n", info.seccomp.nr);
-                break;
-              default:
-                printf(" none");
-            }
+            // struct ptrace_syscall_info info;
+            // int info_size = sizeof(struct ptrace_syscall_info);
+            // if (ptrace(PTRACE_GET_SYSCALL_INFO, pid, &info_size, &info) < 0) {
+            //   perror("syscall getinfo");
+            //   exit(1);
+            // }
+            // switch(info.op) {
+            //   case PTRACE_SYSCALL_INFO_ENTRY:
+            //     printf(" [%d] entry: %llu\n", i++, info.entry.nr);
+            //     break;
+            //   case PTRACE_SYSCALL_INFO_EXIT:
+            //     // printf(" exit: %lld\n", info.exit.rval);
+            //     break;
+            //   case PTRACE_SYSCALL_INFO_SECCOMP:
+            //     // printf(" setcomp: %llu\n", info.seccomp.nr);
+            //     break;
+            //   default:
+            //     printf(" none");
+            // }
             break;
           default:
             printf("what: %d\n", WSTOPSIG(status));
