@@ -1,6 +1,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <sys/ptrace.h>
 #include <sys/types.h>   // pid_t
 #include <sys/user.h>
@@ -11,6 +12,7 @@
 int main(int argc, char *argv[]) {
   int ret;
   int status;
+  bool in_syscall = false;
   pid_t pid;
 
   printf("start!\n");
@@ -47,7 +49,6 @@ int main(int argc, char *argv[]) {
     /*
       When delivering system call traps, set bit 7 in the signal number (i.e., deliver SIGTRAP|0x80).
     */
-    int i = 0;
     do {
       
       // if (ptrace(PTRACE_SETOPTIONS, pid, 0L, PTRACE_O_TRACESYSGOOD) < 0) {
@@ -75,7 +76,7 @@ int main(int argc, char *argv[]) {
        SIGTRAP by querying PTRACE_GETSIGINFO for the following cases:
        */
       if (WIFSTOPPED(status)) {
-        printf("stopped: %d\n", WSTOPSIG(status));
+        // printf("stopped: %d\n", WSTOPSIG(status));
         switch (WSTOPSIG(status)) {
           case SIGSTOP:
             // printf("sigstop\n");
@@ -85,25 +86,27 @@ int main(int argc, char *argv[]) {
             }
             break;
           case SIGTRAP | 0x80:
-            // struct ptrace_syscall_info info;
-            // int info_size = sizeof(struct ptrace_syscall_info);
-            // if (ptrace(PTRACE_GET_SYSCALL_INFO, pid, &info_size, &info) < 0) {
-            //   perror("syscall getinfo");
-            //   exit(1);
-            // }
-            // switch(info.op) {
-            //   case PTRACE_SYSCALL_INFO_ENTRY:
-            //     printf(" [%d] entry: %llu\n", i++, info.entry.nr);
-            //     break;
-            //   case PTRACE_SYSCALL_INFO_EXIT:
-            //     // printf(" exit: %lld\n", info.exit.rval);
-            //     break;
-            //   case PTRACE_SYSCALL_INFO_SECCOMP:
-            //     // printf(" setcomp: %llu\n", info.seccomp.nr);
-            //     break;
-            //   default:
-            //     printf(" none");
-            // }
+            struct user_regs regs;
+            if (!in_syscall) {
+              printf("Syscall Entry\n");
+              if (ptrace(PTRACE_GETREGS, pid, 0L, &regs) != -1) {
+                printf("  r0=%ld\n", regs.uregs[0]);
+                printf("  r7=%ld\n", regs.uregs[7]);
+                // write syscall
+                if (regs.uregs[7] == 4) {
+                  printf("WRITE with %ld, %ld, %ld\n", regs.uregs[0], regs.uregs[1], regs.uregs[2]);
+                  printf("May be dummy?: %ld\n", regs.uregs[3]);
+                }
+              }
+              in_syscall = true;
+            } else {
+              printf("Syscall Exit\n");
+              if (ptrace(PTRACE_GETREGS, pid, 0L, &regs) != -1) {
+                printf("  r0=%ld\n", regs.uregs[0]);
+                printf("  r7=%ld\n", regs.uregs[7]);
+              }
+              in_syscall = false;
+            }
             break;
           default:
             printf("what: %d\n", WSTOPSIG(status));
