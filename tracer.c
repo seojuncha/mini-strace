@@ -26,7 +26,8 @@ int tracer_loop() {
   int status, sig;
   int syscall_count = 0;
   struct user_regs_struct reg;
-  unsigned long long sysnum;
+  int in_syscall = 0;
+  unsigned long long sysnum, retval;
   const char *sysname;
   pid_t pid;
  
@@ -45,12 +46,36 @@ int tracer_loop() {
     if (WIFSTOPPED(status)) {
       sig = WSTOPSIG(status);
       if (sig == (SIGTRAP | 0x80)) {
-        ptrace(PTRACE_GETREGS, pid, 0, &reg);
+        if (!in_syscall) {
+          in_syscall = 1;
+          ptrace(PTRACE_GETREGS, pid, 0, &reg);
  
-        sysnum = reg.orig_rax;
-        sysname = x64_syscall_name(sysnum);
-        if (strncmp("unknown", sysname, 7)) {
-          printf("syscall[%lld] %s\n", sysnum, sysname);
+          /*
+          sysnum = reg.orig_rax;
+          sysname = x64_syscall_name(sysnum);
+          if (strncmp("unknown", sysname, 7)) {
+            if (sysnum == 0) {
+              printf("syscall[%lld] %s(fd=%lld, buf=0x%llx, count=%lld) -> 0x%llx\n",
+                  sysnum, sysname, reg.rdi, reg.rsi, reg.rdx, retval);
+            } else {
+              printf("syscall[%lld] %s\n", sysnum, sysname);
+            }
+          }
+          */
+        } else {
+          ptrace(PTRACE_GETREGS, pid, 0, &reg);
+          sysnum = reg.orig_rax;
+          sysname = x64_syscall_name(sysnum);
+          if (strncmp("unknown", sysname, 7)) {
+            retval = reg.rax;
+            if (sysnum == 0) {
+              printf("syscall[%lld] %s(fd=%lld, buf=0x%llx, count=%lld) -> 0x%llx\n",
+                  sysnum, sysname, reg.rdi, reg.rsi, reg.rdx, retval);
+            } else {
+              printf("syscall[%lld] %s -> 0x%llx\n", sysnum, sysname, retval);
+            }
+          }
+          in_syscall = 0;
           syscall_count += 1;
         }
       } else if (sig == SIGSTOP) {
