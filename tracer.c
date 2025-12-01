@@ -1,7 +1,11 @@
 #include <sys/wait.h>
 #include <sys/ptrace.h>
+#include <sys/user.h>
 #include <stdio.h>
+#include <string.h>
 #include <signal.h>
+ 
+#include "syscalls_x64.h"
  
 /*#define DEBUG*/
  
@@ -16,10 +20,17 @@ static void check_signal(int status) {
 }
 #endif
  
+ 
+ 
 int tracer_loop() {
   int status, sig;
   int syscall_count = 0;
+  struct user_regs_struct reg;
+  unsigned long long sysnum;
+  const char *sysname;
   pid_t pid;
+ 
+  memset(&reg, 0x0, sizeof(struct user_regs_struct));
  
   do {
     pid = waitpid(0, &status, 0);
@@ -34,7 +45,14 @@ int tracer_loop() {
     if (WIFSTOPPED(status)) {
       sig = WSTOPSIG(status);
       if (sig == (SIGTRAP | 0x80)) {
-        syscall_count += 1;
+        ptrace(PTRACE_GETREGS, pid, 0, &reg);
+ 
+        sysnum = reg.orig_rax;
+        sysname = x64_syscall_name(sysnum);
+        if (strncmp("unknown", sysname, 7)) {
+          printf("syscall[%lld] %s\n", sysnum, sysname);
+          syscall_count += 1;
+        }
       } else if (sig == SIGSTOP) {
         /* signal-delevery-stop state */
         printf("sigstop\n");

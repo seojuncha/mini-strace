@@ -1,2 +1,2 @@
 #!/bin/bash
-gcc tracer.c main.c && ./a.out echo "a"
+gcc syscalls_x64.c tracer.c main.c && ./a.out echo "a"
