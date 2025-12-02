@@ -6,6 +6,7 @@
 #include <signal.h>
  
 #include "syscalls_x64.h"
+#include "error.h"
  
 static void read_data(pid_t pid, char *str, const struct user_regs_struct *reg) {
   int i = 0, j = 0;
@@ -21,9 +22,16 @@ static void read_data(pid_t pid, char *str, const struct user_regs_struct *reg) 
   }
 }
  
+/*
+Example:
+ openat(AT_FDCWD, "/root/ccos_lib/glibc-hwcaps/x86-64-v3/libc.so.6", O_RDONLY|O_CLOEXEC)
+static void read_openat(pid_t pid, const struct user_regs_struct *reg) {
+}
+*/
+ 
 static void print_syscall(pid_t pid, const struct user_regs_struct *reg) {
   int i = 0;
-  char str[64];
+  char str[128];
   unsigned long long retval = reg->rax;
   unsigned long long sysnum = reg->orig_rax;
   const char *sysname = x64_syscall_name(sysnum);
@@ -31,8 +39,8 @@ static void print_syscall(pid_t pid, const struct user_regs_struct *reg) {
   memset(&str, 0, sizeof(str));
  
   switch(sysnum) {
-    case 0:
-    case 1:
+    case 0:  /* read */
+    case 1:  /* write */
       read_data(pid, str, reg);
  
       printf("%s[%lld] (fd=%lld, buf=0x%llx [\"", sysname, sysnum, reg->rdi, reg->rsi);
@@ -43,10 +51,33 @@ static void print_syscall(pid_t pid, const struct user_regs_struct *reg) {
           printf("%c", str[i]);
         }
       }
-      printf("\"], count=%lld) -> 0x%llx\n", reg->rdx, retval);
+      printf("\"], count=%lld) -> %lld\n", reg->rdx, retval);
       break;
+    case 257: /* openat */ {
+      unsigned long long dirfd = reg->rdi;
+      unsigned long long pathname = reg->rsi;
+      /*
+      unsigned long long flags = reg->rdx;
+      unsigned long long  mode = reg->r10;
+      */
+      read_data(pid, str, reg);
+ 
+      /* is negative */
+      if (retval >> 32) {
+        printf("%s[%lld] (dirfd=0x%llx, pathname=0x%llx [\"%s\"]) -> %s(%lld) %s\n",
+            sysname, sysnum,
+            dirfd, pathname, str,
+            err_tbl[~retval].str, (long long)retval+1, strerror(err_tbl[~retval].code));
+      } else {
+        printf("%s[%lld] (dirfd=0x%llx, pathname=0x%llx [\"%s\"]) -> %lld\n",
+            sysname, sysnum, 
+            dirfd, pathname, str,
+            retval);
+      }
+    }
+    break;
     default:
-      printf("%s[%lld] -> 0x%llx\n",sysname, sysnum, retval);
+      printf("%s[%lld] -> %lld\n",sysname, sysnum, (long long)retval);
       break;
   }
 }
@@ -99,4 +130,3 @@ int tracer_loop() {
   } while (!WIFEXITED(status) && !WIFSIGNALED(status));
   return 0;
 }
-
