@@ -7,31 +7,63 @@
  
 #include "syscalls_x64.h"
  
-/*#define DEBUG*/
+static void read_data(pid_t pid, char *str, const struct user_regs_struct *reg) {
+  int i = 0, j = 0;
+  unsigned long long addr = 0;
+  long peekdata = 0;
  
-#if defined(DEBUG)
-static void check_signal(int status) {
-  if (WIFEXITED(status)) printf("1\n");
-  if (WEXITSTATUS(status)) printf("2\n");
-  if (WIFSIGNALED(status)) printf("3\n");
-  if (WTERMSIG(status)) printf("4\n");
-  if (WIFSTOPPED(status)) printf("5\n");
-  if (WSTOPSIG(status)) printf("6\n");
+  for (i = 0; i < 8; i++) {
+    addr = reg->rsi + (i<<3);
+    peekdata = ptrace(PTRACE_PEEKDATA, pid, addr, NULL);
+    for (j = 0; j < 8; j++) {
+      str[j + (i<<3)] = ((peekdata >> (j * 8)) & 0xff);
+    }
+  }
 }
-#endif
  
+static void print_syscall(pid_t pid, const struct user_regs_struct *reg) {
+  int i = 0;
+  char str[64];
+  unsigned long long retval = reg->rax;
+  unsigned long long sysnum = reg->orig_rax;
+  const char *sysname = x64_syscall_name(sysnum);
  
+  memset(&str, 0, sizeof(str));
+ 
+  switch(sysnum) {
+    case 0:
+    case 1:
+      read_data(pid, str, reg);
+ 
+      printf("%s[%lld] (fd=%lld, buf=0x%llx [\"", sysname, sysnum, reg->rdi, reg->rsi);
+      for (i = 0; i < 60; i++) {
+        if (str[i] == '\n') {
+          printf("\\n");
+        } else {
+          printf("%c", str[i]);
+        }
+      }
+      printf("\"], count=%lld) -> 0x%llx\n", reg->rdx, retval);
+      break;
+    default:
+      printf("%s[%lld] -> 0x%llx\n",sysname, sysnum, retval);
+      break;
+  }
+}
+ 
+static int is_not_unknown(const char *sysname) {
+  return strncmp("unknown", sysname, 7);
+}
  
 int tracer_loop() {
   int status, sig;
-  int syscall_count = 0;
   struct user_regs_struct reg;
   int in_syscall = 0;
-  unsigned long long sysnum, retval;
+  unsigned long long sysnum;
   const char *sysname;
   pid_t pid;
  
-  memset(&reg, 0x0, sizeof(struct user_regs_struct));
+  memset(&reg, 0, sizeof(struct user_regs_struct));
  
   do {
     pid = waitpid(0, &status, 0);
@@ -40,43 +72,20 @@ int tracer_loop() {
       return -1;
     }
  
-#if defined(DEBUG)
-    check_signal(status);
-#endif
     if (WIFSTOPPED(status)) {
       sig = WSTOPSIG(status);
       if (sig == (SIGTRAP | 0x80)) {
         if (!in_syscall) {
           in_syscall = 1;
-          ptrace(PTRACE_GETREGS, pid, 0, &reg);
- 
-          /*
-          sysnum = reg.orig_rax;
-          sysname = x64_syscall_name(sysnum);
-          if (strncmp("unknown", sysname, 7)) {
-            if (sysnum == 0) {
-              printf("syscall[%lld] %s(fd=%lld, buf=0x%llx, count=%lld) -> 0x%llx\n",
-                  sysnum, sysname, reg.rdi, reg.rsi, reg.rdx, retval);
-            } else {
-              printf("syscall[%lld] %s\n", sysnum, sysname);
-            }
-          }
-          */
+          /*ptrace(PTRACE_GETREGS, pid, 0, &reg);*/
         } else {
           ptrace(PTRACE_GETREGS, pid, 0, &reg);
           sysnum = reg.orig_rax;
           sysname = x64_syscall_name(sysnum);
-          if (strncmp("unknown", sysname, 7)) {
-            retval = reg.rax;
-            if (sysnum == 0) {
-              printf("syscall[%lld] %s(fd=%lld, buf=0x%llx, count=%lld) -> 0x%llx\n",
-                  sysnum, sysname, reg.rdi, reg.rsi, reg.rdx, retval);
-            } else {
-              printf("syscall[%lld] %s -> 0x%llx\n", sysnum, sysname, retval);
-            }
+          if (is_not_unknown(sysname)) {
+            print_syscall(pid, &reg);
           }
           in_syscall = 0;
-          syscall_count += 1;
         }
       } else if (sig == SIGSTOP) {
         /* signal-delevery-stop state */
@@ -88,6 +97,6 @@ int tracer_loop() {
       ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
     }
   } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-  printf("totally: %d\n", syscall_count);
-  return syscall_count;
+  return 0;
 }
+
