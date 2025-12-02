@@ -55,5 +55,9 @@ dkms.conf
 hello
 mini-strace
 
+# Temp file
+*.swp
+
 # config file
 .vscode
+
