@@ -24,7 +24,7 @@ int main(int argc, char *argv[]) {
  
     /* Allow the parent to observe signal-delevery-stop */
     raise(SIGSTOP);
-    execvp(argv[1], &argv[1]);
+    execve(argv[1], &argv[1], NULL);
     perror("execve");
   } else {
     if (tracer_loop() < 0) {

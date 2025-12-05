@@ -53,6 +53,14 @@ static void print_syscall(pid_t pid, const struct user_regs_struct *reg) {
       }
       printf("\"], count=%lld) -> %lld\n", reg->rdx, retval);
       break;
+    case 9:  /* mmap */
+    case 12: /* brk */
+      printf("%s[%lld] -> 0x%llx\n",sysname, sysnum, retval);
+      break;
+    case 59: /* execve */ {
+      printf("%s[%lld] -> %lld\n",sysname, sysnum, (long long)retval);
+    }
+    break;
     case 257: /* openat */ {
       unsigned long long dirfd = reg->rdi;
       unsigned long long pathname = reg->rsi;
@@ -121,7 +129,7 @@ int tracer_loop() {
       } else if (sig == SIGSTOP) {
         /* signal-delevery-stop state */
         printf("sigstop\n");
-        ptrace(PTRACE_SETOPTIONS, pid, 0L, PTRACE_O_TRACESYSGOOD);
+        ptrace(PTRACE_SETOPTIONS, pid, 0L, PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC);
       } else {
         fprintf(stderr, "unknown signal: %d\n", sig);
       }
