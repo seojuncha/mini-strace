@@ -1,2 +1,3 @@
 #!/bin/bash
-gcc -Wall -Werror -std=c90 src/syscalls_x64.c src/tracer.c src/main.c && ./a.out /usr/bin/echo "a"
+gcc sample/fork-test.c -o fork-test.out
+gcc src/syscalls_x64.c src/tracer.c src/main.c && ./a.out fork-test.out

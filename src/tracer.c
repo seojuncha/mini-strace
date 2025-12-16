@@ -10,10 +10,48 @@
 #include "syscalls_x64.h"
 #include "error.h"
 
+#define MAX_TASKS 5
+
 struct exec_param {
   char path[128];
   int ret;
 };
+
+struct task {
+  pid_t pid;
+  int in_syscall;
+  int alive;
+};
+
+struct task *find_task(struct task *tasks, pid_t pid) {
+  int i; 
+  for (i = 0; i < MAX_TASKS; i++) {
+    struct task *t = &tasks[i];
+    if (t->pid == pid)
+      return t;
+  }
+  return NULL;
+}
+
+void add_traced_task(struct task *tasks, pid_t pid) {
+  int i; 
+  for (i = 0; i < MAX_TASKS; i++) {
+    struct task *t = &tasks[i];
+    if (t->pid == pid)
+      t->alive = 1;
+  }
+}
+
+int have_alive_tasks(const struct task *tasks) {
+  int count = 0;
+  int i;
+
+  for (i = 0; i < MAX_TASKS; i++) {
+    count += tasks[i].alive;
+  }
+
+  return count;
+}
 
 void read_exe_path(pid_t pid, char *buf, size_t size) {
   char path[64];
@@ -41,6 +79,21 @@ static void read_data(pid_t pid, char *str, unsigned long long reg_addr) {
       str[j + (i<<3)] = ((peekdata >> (j * 8)) & 0xff);
     }
   }
+}
+
+static void print_waitpid(pid_t pid, int status) {
+  printf("[DEBUG] [%d] ", pid);
+ 
+  if (WIFEXITED(status))
+      printf("WEXITSTATUS %d\n", WEXITSTATUS(status));
+  else if (WIFSIGNALED(status))
+      printf("WTERMSIG %d\n", WTERMSIG(status));
+  else if (WIFSTOPPED(status))
+      printf("WSTOPSIG %d\n", WSTOPSIG(status));
+  else if (WIFCONTINUED(status))
+      printf("continued\n");
+  else 
+      printf("unkown status, %d\n", status);
 }
 
 static void print_syscall(pid_t pid, const struct user_regs_struct *reg) {
@@ -107,67 +160,93 @@ static int is_not_unknown(const char *sysname) {
 int tracer_loop(void) {
   int status;
   struct user_regs_struct reg;
-  int in_syscall = 0;
+  pid_t pid;
   unsigned long long sysnum;
   const char *sysname;
-  pid_t pid;
 
-  long trace_opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC;
+  long trace_opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK;
   struct exec_param ep;
+
+  struct task tasks[MAX_TASKS];
+  struct task *cur_task = NULL;
+  size_t task_count;
  
   memset(&reg, 0, sizeof(struct user_regs_struct));
- 
-  do {
-    pid = waitpid(0, &status, 0);
+
+  while (have_alive_tasks(tasks)) {
+    /* wait all processes */
+    pid = waitpid(-1, &status, 0);
     if (pid == -1) {
-      perror("waitpid error");
+      perror("waitpid");
       return -1;
     }
 
-    /* signal-delevery-stop state */
-    if (WIFSTOPPED(status) && (WSTOPSIG(status) == SIGSTOP)) {
-      printf("==== First SIGSTOP raised. initialize the tracee\n");
-      ptrace(PTRACE_SETOPTIONS, pid, 0L, trace_opts);
-      ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
+    print_waitpid(pid, status);
+
+    cur_task = find_task(tasks, pid);
+    if (!cur_task) {
+      fprintf(stderr, "[mini-strace] couldn't find a task: %d\n", pid);
       continue;
     }
 
-    /* PTRACE_EVENT_* */
+    /* terminated */
+    if (WIFEXITED(status) || WIFSIGNALED(status)) {
+      cur_task->alive = 0;
+      fprintf(stderr, "[mini-strace] %d has terminated\n", cur_task->pid);
+      continue;
+    }
+
     if ((status >> 8) == (SIGTRAP | (PTRACE_EVENT_EXEC << 8))) {
-      char exepath[256];
+      char exepath[256] = {0};
       read_exe_path(pid, exepath, sizeof(exepath));
-      printf("==== after exec[pid:%d]: %s", pid, exepath);
+      printf("==== after EXECVE pid: %d [\"%s\"]", pid, exepath);
+      add_traced_task(tasks, pid);
       ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
       continue;
-    }
- 
-    /* syscall-entry/exit stop */
-    if (WIFSTOPPED(status) && (WSTOPSIG(status) == (SIGTRAP | 0x80))) {
-      ptrace(PTRACE_GETREGS, pid, 0, &reg);
-      sysnum = reg.orig_rax;
-      sysname = x64_syscall_name(sysnum);
-
-      if (!in_syscall) {
-        in_syscall = 1;
-        if (sysnum == SYS_execve) {
-          char str[128];
-          memset(str, 0, 128);
-          read_data(pid, str, reg.rdi);
-          memcpy(ep.path, str, 128); 
-        }
-      } else {
-        if (is_not_unknown(sysname)) {
-          if (sysnum == SYS_execve) {
-            ep.ret = reg.rax;
-            printf("%s[%lld] (path=\"%s\" ) = %d\n", sysname, sysnum, ep.path, ep.ret);
-          }
-          print_syscall(pid, &reg);
-        }
-        in_syscall = 0;
-      }
+    } else if ((status >> 8) == (SIGTRAP | (PTRACE_EVENT_FORK << 8))) {
+      printf("=== after FORK pid: %d\n", pid);
+      add_traced_task(tasks, pid);
       ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
+      continue;
+    } else {
+      // fprintf(stderr, "unknown ptrace_event_*\n");
     }
-  } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+
+    if (WIFSTOPPED(status)) {
+      if (WSTOPSIG(status) == SIGSTOP) {
+        fprintf(stderr, "[mini-strace] set options\n");
+        ptrace(PTRACE_SETOPTIONS, pid, 0L, trace_opts);
+        ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
+      } else if (WSTOPSIG(status) == (SIGTRAP | 0x80)) {
+        ptrace(PTRACE_GETREGS, pid, 0, &reg);
+        sysnum = reg.orig_rax;
+        sysname = x64_syscall_name(sysnum);
+
+        if (!(cur_task->in_syscall)) {
+          cur_task->in_syscall = 1;
+          if (sysnum == SYS_execve) {
+            char str[128];
+            memset(str, 0, 128);
+            read_data(pid, str, reg.rdi);
+            memcpy(ep.path, str, 128); 
+          }
+        } else {
+          if (is_not_unknown(sysname)) {
+            if (sysnum == SYS_execve) {
+              ep.ret = reg.rax;
+              printf("%s[%lld] (path=\"%s\" ) = %d\n", sysname, sysnum, ep.path, ep.ret);
+            }
+            print_syscall(pid, &reg);
+          }
+          cur_task->in_syscall = 0;
+        }
+        ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
+      } else {
+        fprintf(stderr, "unknown stop signal\n");
+        ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
+      }
+    }
+  }
 
   return 0;
 }
