@@ -35,11 +35,11 @@ int main(int argc, char *argv[]) {
     execve(argv[1], &argv[1], NULL);
     perror("execve");
   } else {
-    if (tracer_loop() < 0) {
+    if (tracer_loop(pid) < 0) {
       fprintf(stderr, "abnormal exited tracer loop\n");
       return 1;
     }
-    printf("[pid:%d] Parent process\n", getpid());
+    printf("[pid:%d] Tracer is terminated.\n", getpid());
   }
 	return 0;
 }

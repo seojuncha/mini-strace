@@ -14,6 +14,10 @@ const char *x64_syscall_name(unsigned long long nr) {
     case 17: return "pread64";
     case 18: return "pwrite64";
     case 21: return "access";
+    case 39: return "getpid";
+    case 56: return "clone";
+    case 57: return "fork";
+    case 58: return "vfork";
     case 59: return "execve";
     case 60: return "exit";
     case 231: return "exit_group";
