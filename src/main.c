@@ -27,8 +27,8 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    read_exe_path(child, exepath, sizeof(exepath));
-    printf("==== before exec[pid:%d]: %s", child, exepath);
+    // read_exe_path(child, exepath, sizeof(exepath));
+    // printf("==== before exec[pid:%d]: %s", child, exepath);
  
     /* Allow the parent to observe signal-delivery-stop */
     raise(SIGSTOP);

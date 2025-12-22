@@ -21,6 +21,7 @@ struct task {
   pid_t pid;
   int in_syscall;
   int alive;
+  int is_leaf;   /* is not a root tracee */
 };
 
 struct task *find_task(struct task *tasks, pid_t pid) {
@@ -33,7 +34,7 @@ struct task *find_task(struct task *tasks, pid_t pid) {
   return NULL;
 }
 
-void add_traced_task(struct task *tasks, pid_t pid) {
+void add_traced_task(struct task *tasks, pid_t pid, int is_leaf) {
   int i; 
   for (i = 0; i < MAX_TASKS; i++) {
     struct task *t = &tasks[i];
@@ -41,6 +42,7 @@ void add_traced_task(struct task *tasks, pid_t pid) {
       t->pid = pid;
       t->in_syscall = 0;
       t->alive = 1;
+      t->is_leaf = is_leaf;
       break;
     }
   }
@@ -101,7 +103,7 @@ static void print_waitpid(pid_t pid, int status) {
       printf("unkown status, %d\n", status);
 }
 
-static void print_syscall(pid_t pid, const struct user_regs_struct *reg) {
+static void print_syscall(const struct task *t, const struct user_regs_struct *reg) {
   int i = 0;
   char str[128];
   unsigned long long retval = reg->rax;
@@ -109,11 +111,15 @@ static void print_syscall(pid_t pid, const struct user_regs_struct *reg) {
   const char *sysname = x64_syscall_name(sysnum);
  
   memset(&str, 0, sizeof(str));
+
+  if (t->is_leaf) {
+    printf("[pid %d] ", t->pid);
+  }
  
   switch(sysnum) {
     case 0:  /* read */
     case 1:  /* write */
-      read_data(pid, str, reg->rsi);
+      read_data(t->pid, str, reg->rsi);
       printf("%s[%lld] (fd=%lld, buf=0x%llx [\"", sysname, sysnum, reg->rdi, reg->rsi);
       for (i = 0; i < 60; i++) {
         if (str[i] == '\n') {
@@ -124,11 +130,14 @@ static void print_syscall(pid_t pid, const struct user_regs_struct *reg) {
       }
       printf("\"], count=%lld) = %lld\n", reg->rdx, retval);
       break;
-    case 9:  /* mmap */
-    case 12: /* brk */
-      printf("%s[%lld] = 0x%llx\n",sysname, sysnum, retval);
-      break;
+    // case 9:  /* mmap */
+    // case 12: /* brk */
+    //   printf("%s[%lld] = 0x%llx\n",sysname, sysnum, retval);
+    //   break;
+    case 3:
     case 56:
+    case 59:
+    case 231:
       printf("%s[%lld] = %lld\n", sysname, sysnum, retval);
       break;
     case 257: /* openat */ {
@@ -138,7 +147,7 @@ static void print_syscall(pid_t pid, const struct user_regs_struct *reg) {
       unsigned long long flags = reg->rdx;
       unsigned long long  mode = reg->r10;
       */
-      read_data(pid, str, reg->rsi);
+      read_data(t->pid, str, reg->rsi);
  
       /* is negative */
       if (retval >> 32) {
@@ -155,7 +164,7 @@ static void print_syscall(pid_t pid, const struct user_regs_struct *reg) {
     }
     break;
     default:
-      /*printf("%s[%lld] -> %lld\n",sysname, sysnum, (long long)retval);*/
+      printf("%s[%lld] -> %lld\n",sysname, sysnum, (long long)retval);
       break;
   }
 }
@@ -187,13 +196,13 @@ int tracer_loop(pid_t tracee_pid) {
     return -1;
   }
 
-  print_waitpid(pid, status);
+  // print_waitpid(pid, status);
 
   /* add the first child of tracer, tracee */
   if (WIFSTOPPED(status) && (WSTOPSIG(status) == SIGSTOP)) {
     ptrace(PTRACE_SETOPTIONS, pid, 0L, trace_opts);
     ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
-    add_traced_task(tasks, pid);
+    add_traced_task(tasks, pid, 0);
   }
 
   while (have_alive_tasks(tasks)) {
@@ -204,7 +213,7 @@ int tracer_loop(pid_t tracee_pid) {
       return -1;
     }
 
-    print_waitpid(pid, status);
+    // print_waitpid(pid, status);
 
     cur_task = find_task(tasks, pid);
     if (!cur_task) {
@@ -229,7 +238,7 @@ int tracer_loop(pid_t tracee_pid) {
         sysnum = reg.orig_rax;
         sysname = x64_syscall_name(sysnum);
 
-        printf("[%lld] %s, in_syscall=%d\n",sysnum, sysname, cur_task->in_syscall);
+        // printf("[%lld] %s, in_syscall=%d\n",sysnum, sysname, cur_task->in_syscall);
 
         if (!(cur_task->in_syscall)) {
           cur_task->in_syscall = 1;
@@ -243,13 +252,16 @@ int tracer_loop(pid_t tracee_pid) {
           if (is_not_unknown(sysname)) {
             if (sysnum == SYS_execve) {
               ep.ret = reg.rax;
+              if (cur_task->is_leaf) {
+                printf("[pid %d] ", cur_task->pid);
+              }
               printf("%s[%lld] (path=\"%s\" ) = %d\n", sysname, sysnum, ep.path, ep.ret);
             }
-            print_syscall(pid, &reg);
+            print_syscall(cur_task, &reg);
 
             /* temp */
             if (sysnum == 56) {
-              add_traced_task(tasks, reg.rax);
+              add_traced_task(tasks, reg.rax, 1);
             }
           }
           cur_task->in_syscall = 0;
@@ -264,7 +276,7 @@ int tracer_loop(pid_t tracee_pid) {
         char exepath[256] = {0};
         read_exe_path(pid, exepath, sizeof(exepath));
         printf("==== after EXECVE pid: %d [\"%s\"]", pid, exepath);
-        add_traced_task(tasks, pid);
+        // add_traced_task(tasks, pid, 0);
         ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
         continue;
       } else if ((status >> 8) == (SIGTRAP | (PTRACE_EVENT_FORK << 8))) {
