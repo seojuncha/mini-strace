@@ -233,6 +233,21 @@ int tracer_loop(pid_t tracee_pid) {
         fprintf(stderr, "[mini-strace] set options\n");
         ptrace(PTRACE_SETOPTIONS, pid, 0L, trace_opts);
         ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
+      } else if (WSTOPSIG(status) == SIGTRAP) {
+        if ((status >> 8) == (SIGTRAP | (PTRACE_EVENT_EXEC << 8))) {
+          char exepath[256] = {0};
+          read_exe_path(pid, exepath, sizeof(exepath));
+          printf("==== after EXECVE pid: %d [\"%s\"]", pid, exepath);
+          // add_traced_task(tasks, pid, 0);
+        } else if ((status >> 8) == (SIGTRAP | (PTRACE_EVENT_FORK << 8))) {
+          unsigned long new_pid;
+          ptrace(PTRACE_GETEVENTMSG, pid, 0L, &new_pid);
+          printf("=== after FORK pid: %ld\n", new_pid);
+          add_traced_task(tasks, new_pid, 1);
+        } else {
+          fprintf(stderr, "unknown ptrace_event_*\n");
+        }
+        ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
       } else if (WSTOPSIG(status) == (SIGTRAP | 0x80)) {
         ptrace(PTRACE_GETREGS, pid, 0, &reg);
         sysnum = reg.orig_rax;
@@ -268,27 +283,12 @@ int tracer_loop(pid_t tracee_pid) {
         }
         ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
       } else {
-        fprintf(stderr, "unknown stop signal\n");
+        /* 17: SIGCHLD */
+        fprintf(stderr, "unknown stop signal: %d\n", WSTOPSIG(status));
         ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
       }
     } else {
-      if ((status >> 8) == (SIGTRAP | (PTRACE_EVENT_EXEC << 8))) {
-        char exepath[256] = {0};
-        read_exe_path(pid, exepath, sizeof(exepath));
-        printf("==== after EXECVE pid: %d [\"%s\"]", pid, exepath);
-        // add_traced_task(tasks, pid, 0);
-        ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
-        continue;
-      } else if ((status >> 8) == (SIGTRAP | (PTRACE_EVENT_FORK << 8))) {
-        printf("=== after FORK pid: %d\n", pid);
-        /*
-        add_traced_task(tasks, pid);
-        ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
-        */
-        continue;
-      } else {
-        // fprintf(stderr, "unknown ptrace_event_*\n");
-      }
+
     }
   }
 
