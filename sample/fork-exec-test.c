@@ -3,13 +3,16 @@
 #include <unistd.h>
 #include <stdio.h>
 
-int main() {
+int main(int argc, char *argv[]) {
   pid_t parent, child;
 
   child = fork();
   if (child == 0) {
-    char *argv[] = {"/usr/bin/echo", "hello-from-exec", NULL};
-    execv(argv[0], argv);
+    if (argc < 2) {
+      fprintf(stderr, "not enougth arguments\n");
+      return 2;
+    }
+    execve(argv[1], &argv[1], NULL);
     perror("execv");
     return 1;
   } else {

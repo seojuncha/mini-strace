@@ -61,3 +61,5 @@ mini-strace
 # config file
 .vscode
 
+# Logs
+logs
