@@ -52,11 +52,9 @@ void add_traced_task(struct task *tasks, pid_t pid, int is_leaf) {
 int have_alive_tasks(const struct task *tasks) {
   int count = 0;
   int i;
-
   for (i = 0; i < MAX_TASKS; i++) {
     count += tasks[i].alive;
   }
-
   return count;
 }
 
@@ -180,7 +178,7 @@ int tracer_loop(pid_t tracee_pid) {
   unsigned long long sysnum;
   const char *sysname;
 
-  long trace_opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK;
+  long trace_opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE;
   struct exec_param ep;
 
   struct task tasks[MAX_TASKS];
@@ -228,6 +226,7 @@ int tracer_loop(pid_t tracee_pid) {
       continue;
     }
 
+    /* stopped */
     if (WIFSTOPPED(status)) {
       if (WSTOPSIG(status) == SIGSTOP) {
         fprintf(stderr, "[mini-strace] set options\n");
@@ -238,12 +237,15 @@ int tracer_loop(pid_t tracee_pid) {
           char exepath[256] = {0};
           read_exe_path(pid, exepath, sizeof(exepath));
           printf("==== after EXECVE pid: %d [\"%s\"]", pid, exepath);
-          // add_traced_task(tasks, pid, 0);
         } else if ((status >> 8) == (SIGTRAP | (PTRACE_EVENT_FORK << 8))) {
           unsigned long new_pid;
           ptrace(PTRACE_GETEVENTMSG, pid, 0L, &new_pid);
           printf("=== after FORK pid: %ld\n", new_pid);
           add_traced_task(tasks, new_pid, 1);
+        } else if ((status >> 8) == (SIGTRAP | (PTRACE_EVENT_CLONE << 8))) {
+          unsigned long new_pid;
+          ptrace(PTRACE_GETEVENTMSG, pid, 0L, &new_pid);
+          printf("=== after CLONE pid: %ld\n", new_pid);
         } else {
           fprintf(stderr, "unknown ptrace_event_*\n");
         }
@@ -273,22 +275,17 @@ int tracer_loop(pid_t tracee_pid) {
               printf("%s[%lld] (path=\"%s\" ) = %d\n", sysname, sysnum, ep.path, ep.ret);
             }
             print_syscall(cur_task, &reg);
-
-            /* temp */
-            if (sysnum == 56) {
-              add_traced_task(tasks, reg.rax, 1);
-            }
           }
           cur_task->in_syscall = 0;
         }
         ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
+      } else if (WSTOPSIG(status) == SIGCHLD) {
+        fprintf(stderr, "[pid %d] child has terminated\n", cur_task->pid);
+        ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
       } else {
-        /* 17: SIGCHLD */
         fprintf(stderr, "unknown stop signal: %d\n", WSTOPSIG(status));
         ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
       }
-    } else {
-
     }
   }
 
