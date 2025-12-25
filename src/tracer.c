@@ -246,6 +246,7 @@ int tracer_loop(pid_t tracee_pid) {
           unsigned long new_pid;
           ptrace(PTRACE_GETEVENTMSG, pid, 0L, &new_pid);
           printf("=== after CLONE pid: %ld\n", new_pid);
+          add_traced_task(tasks, new_pid, 1);
         } else {
           fprintf(stderr, "unknown ptrace_event_*\n");
         }
