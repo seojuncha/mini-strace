@@ -49,6 +49,16 @@ void add_traced_task(struct task *tasks, pid_t pid, int is_leaf) {
   fprintf(stderr, "[mini-strace] [%d] add new traced task: %d\n", i, pid);
 }
 
+void remove_traced_task(struct task *tasks, pid_t pid) {
+  int i;
+  for (i = 0; i < MAX_TASKS; i++) {
+    struct task *t = &tasks[i];
+    if (t->pid == pid) {
+      memset(t, 0, sizeof(struct task));
+    }
+  }
+}
+
 int have_alive_tasks(const struct task *tasks) {
   int count = 0;
   int i;
