@@ -19,6 +19,8 @@ struct exec_param {
 
 struct task {
   pid_t pid;
+  char exec_path[128];
+  int exec_ret;
   int in_syscall;
   int alive;
   int is_leaf;   /* is not a root tracee */
@@ -68,6 +70,10 @@ int have_alive_tasks(const struct task *tasks) {
   return count;
 }
 
+static int is_not_unknown(const char *sysname) {
+  return strncmp("unknown", sysname, 7);
+}
+
 void read_exe_path(pid_t pid, char *buf, size_t size) {
   char path[64];
   ssize_t n = 0;
@@ -86,8 +92,7 @@ static void read_data(pid_t pid, char *str, unsigned long long reg_addr) {
   int i = 0, j = 0;
   unsigned long long addr = 0;
   long peekdata = 0;
- 
-  for (i = 0; i < 8; i++) {
+ for (i = 0; i < 8; i++) {
     addr = reg_addr + (i<<3);
     peekdata = ptrace(PTRACE_PEEKDATA, pid, addr, NULL);
     for (j = 0; j < 8; j++) {
@@ -129,7 +134,7 @@ static void print_syscall(const struct task *t, const struct user_regs_struct *r
     case 1:  /* write */
       read_data(t->pid, str, reg->rsi);
       printf("%s[%lld] (fd=%lld, buf=0x%llx [\"", sysname, sysnum, reg->rdi, reg->rsi);
-      for (i = 0; i < 60; i++) {
+      for (i = 0; i < (reg->rdx > 60 ? 60 : reg->rdx); i++) {
         if (str[i] == '\n') {
           printf("\\n");
         } else {
@@ -151,10 +156,7 @@ static void print_syscall(const struct task *t, const struct user_regs_struct *r
     case 257: /* openat */ {
       unsigned long long dirfd = reg->rdi;
       unsigned long long pathname = reg->rsi;
-      /*
-      unsigned long long flags = reg->rdx;
-      unsigned long long  mode = reg->r10;
-      */
+
       read_data(t->pid, str, reg->rsi);
  
       /* is negative */
@@ -176,17 +178,67 @@ static void print_syscall(const struct task *t, const struct user_regs_struct *r
       break;
   }
 }
- 
-static int is_not_unknown(const char *sysname) {
-  return strncmp("unknown", sysname, 7);
+
+static void handle_event(struct task *tasks, pid_t pid, int ws) {
+  struct task *t;
+  char exepath[256] = {0};
+  unsigned long new_pid = 0;
+
+  switch (ws) {
+    case (SIGTRAP | (PTRACE_EVENT_EXEC << 8)):
+      t = find_task(tasks, pid);
+      if (t) {
+        read_exe_path(pid, t->exec_path, sizeof(t->exec_path));
+        printf("==== after EXECVE pid: %d [\"%s\"]", pid, t->exec_path);
+      }
+      break;
+    case (SIGTRAP | (PTRACE_EVENT_FORK << 8)):
+    case (SIGTRAP | (PTRACE_EVENT_CLONE << 8)):
+      ptrace(PTRACE_GETEVENTMSG, pid, 0L, &new_pid);
+      printf("=== after FORK pid: %ld\n", new_pid);
+      add_traced_task(tasks, new_pid, 1);
+      break;
+    default:
+      fprintf(stderr, "unknown ptrace_event_*\n");
+      break;
+  }
+}
+
+static void handle_syscall(struct task *cur_task, pid_t pid) {
+  struct user_regs_struct reg;
+  unsigned long long sysnum;
+  const char *sysname;
+
+  ptrace(PTRACE_GETREGS, pid, 0, &reg);
+  sysnum = reg.orig_rax;
+  sysname = x64_syscall_name(sysnum);
+
+  // printf("[%lld] %s, in_syscall=%d\n",sysnum, sysname, cur_task->in_syscall);
+
+  if (!(cur_task->in_syscall)) {
+    cur_task->in_syscall = 1;
+    if (sysnum == SYS_execve) {
+      read_data(pid, cur_task->exec_path, reg.rdi);
+    }
+  } else {
+    if (is_not_unknown(sysname)) {
+      if (sysnum == SYS_execve) {
+        cur_task->exec_ret = reg.rax;
+        if (cur_task->is_leaf) {
+          printf("[pid %d] ", cur_task->pid);
+        }
+        printf("%s[%lld] (path=\"%s\" ) = %d\n", sysname, sysnum, cur_task->exec_path, cur_task->exec_ret);
+      }
+      print_syscall(cur_task, &reg);
+    }
+    cur_task->in_syscall = 0;
+  }
 }
  
 int tracer_loop(pid_t tracee_pid) {
   int status;
   struct user_regs_struct reg;
   pid_t pid;
-  unsigned long long sysnum;
-  const char *sysname;
 
   long trace_opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE;
   struct exec_param ep;
@@ -238,65 +290,21 @@ int tracer_loop(pid_t tracee_pid) {
 
     /* stopped */
     if (WIFSTOPPED(status)) {
-      if (WSTOPSIG(status) == SIGSTOP) {
-        fprintf(stderr, "[mini-strace] set options\n");
-        ptrace(PTRACE_SETOPTIONS, pid, 0L, trace_opts);
-        ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
-      } else if (WSTOPSIG(status) == SIGTRAP) {
-        if ((status >> 8) == (SIGTRAP | (PTRACE_EVENT_EXEC << 8))) {
-          char exepath[256] = {0};
-          read_exe_path(pid, exepath, sizeof(exepath));
-          printf("==== after EXECVE pid: %d [\"%s\"]", pid, exepath);
-        } else if ((status >> 8) == (SIGTRAP | (PTRACE_EVENT_FORK << 8))) {
-          unsigned long new_pid;
-          ptrace(PTRACE_GETEVENTMSG, pid, 0L, &new_pid);
-          printf("=== after FORK pid: %ld\n", new_pid);
-          add_traced_task(tasks, new_pid, 1);
-        } else if ((status >> 8) == (SIGTRAP | (PTRACE_EVENT_CLONE << 8))) {
-          unsigned long new_pid;
-          ptrace(PTRACE_GETEVENTMSG, pid, 0L, &new_pid);
-          printf("=== after CLONE pid: %ld\n", new_pid);
-          add_traced_task(tasks, new_pid, 1);
-        } else {
-          fprintf(stderr, "unknown ptrace_event_*\n");
-        }
-        ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
-      } else if (WSTOPSIG(status) == (SIGTRAP | 0x80)) {
-        ptrace(PTRACE_GETREGS, pid, 0, &reg);
-        sysnum = reg.orig_rax;
-        sysname = x64_syscall_name(sysnum);
-
-        // printf("[%lld] %s, in_syscall=%d\n",sysnum, sysname, cur_task->in_syscall);
-
-        if (!(cur_task->in_syscall)) {
-          cur_task->in_syscall = 1;
-          if (sysnum == SYS_execve) {
-            char str[128];
-            memset(str, 0, 128);
-            read_data(pid, str, reg.rdi);
-            memcpy(ep.path, str, 128); 
-          }
-        } else {
-          if (is_not_unknown(sysname)) {
-            if (sysnum == SYS_execve) {
-              ep.ret = reg.rax;
-              if (cur_task->is_leaf) {
-                printf("[pid %d] ", cur_task->pid);
-              }
-              printf("%s[%lld] (path=\"%s\" ) = %d\n", sysname, sysnum, ep.path, ep.ret);
-            }
-            print_syscall(cur_task, &reg);
-          }
-          cur_task->in_syscall = 0;
-        }
-        ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
-      } else if (WSTOPSIG(status) == SIGCHLD) {
-        fprintf(stderr, "[pid %d] child has terminated\n", cur_task->pid);
-        ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
-      } else {
-        fprintf(stderr, "unknown stop signal: %d\n", WSTOPSIG(status));
-        ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
+      switch (WSTOPSIG(status)) {
+        case (SIGSTOP):
+          ptrace(PTRACE_SETOPTIONS, pid, 0L, trace_opts);
+          break;
+        case (SIGTRAP):
+          handle_event(tasks, pid, (status >> 8));
+          break;
+        case (SIGTRAP | 0x80):
+          handle_syscall(cur_task, pid);
+          break;
+        default:
+          fprintf(stderr, "unknown stop signal: %d\n", WSTOPSIG(status));
+          break;
       }
+      ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
     }
   }
 
