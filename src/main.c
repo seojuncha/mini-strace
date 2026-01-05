@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "abnormal exited tracer loop\n");
       return 1;
     }
-    printf("[pid:%d] Tracer is terminated.\n", getpid());
+    printf("[info] [pid:%d] Tracer is terminated.\n", getpid());
   }
 	return 0;
 }
