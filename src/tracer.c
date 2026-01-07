@@ -14,11 +14,6 @@
 
 #define MAX_TASKS 5
 
-struct exec_param {
-  char path[128];
-  int ret;
-};
-
 struct task {
   pid_t pid;
   char exec_path[128];
@@ -111,9 +106,10 @@ static inline void now_ns(void) {
 }
  
 static void read_data(pid_t pid, char *str, unsigned long long reg_addr) {
-  int i = 0, j = 0;
-  unsigned long long addr = 0;
-  long peekdata = 0;
+  int i, j;
+  unsigned long long addr;
+  long peekdata;
+
  for (i = 0; i < 8; i++) {
     addr = reg_addr + (i<<3);
     peekdata = ptrace(PTRACE_PEEKDATA, pid, addr, NULL);
@@ -203,8 +199,9 @@ static void print_syscall(const struct task *t, const struct user_regs_struct *r
             dirfd, pathname, str,
             retval);
       }
+      break;
     }
-    break;
+
     default:
       fprintf(stderr, "%s () = %lld\n", sysname, (long long)retval);
       break;
@@ -224,16 +221,19 @@ static void handle_event(struct task *tasks, pid_t pid, int ws) {
         // printf("==== after EXECVE pid: %d [\"%s\"]", pid, t->exec_path);
       }
       break;
+
     case (SIGTRAP | (PTRACE_EVENT_FORK << 8)):
       fprintf(stderr, "[  debug] event_fork\n");
       ptrace(PTRACE_GETEVENTMSG, pid, 0L, &new_pid);
       add_traced_task(tasks, new_pid, 1);
       break;
+
     case (SIGTRAP | (PTRACE_EVENT_CLONE << 8)):
       fprintf(stderr, "[  debug] event_clone\n");
       ptrace(PTRACE_GETEVENTMSG, pid, 0L, &new_pid);
       add_traced_task(tasks, new_pid, 1);
       break;
+
     default:
       fprintf(stderr, "[err] unknown ptrace_event_*\n");
       break;
@@ -246,10 +246,9 @@ static void handle_syscall(struct task *cur_task, pid_t pid) {
   const char *sysname;
 
   ptrace(PTRACE_GETREGS, pid, 0, &reg);
+
   nr = reg.orig_rax;
   sysname = x64_syscall_name(nr);
-
-  // printf("[%lld] %s, in_syscall=%d\n",sysnum, sysname, cur_task->in_syscall);
 
   if (!(cur_task->in_syscall)) {
     cur_task->in_syscall = 1;
@@ -269,11 +268,10 @@ static void handle_syscall(struct task *cur_task, pid_t pid) {
  
 int tracer_loop(pid_t tracee_pid) {
   int status;
-  struct user_regs_struct reg;
   pid_t pid;
-
   long trace_opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE;
-  struct exec_param ep;
+
+  struct user_regs_struct reg;
 
   struct task tasks[MAX_TASKS];
   struct task *cur_task = NULL;
@@ -322,17 +320,21 @@ int tracer_loop(pid_t tracee_pid) {
         case (SIGSTOP):
           ptrace(PTRACE_SETOPTIONS, pid, 0L, trace_opts);
           break;
+
         /* PTRACE_EVENT_* stopped */
         case (SIGTRAP):
           handle_event(tasks, pid, (status >> 8));
           break;
+
         /* syscall stopped */
         case (SIGTRAP | 0x80):
           handle_syscall(cur_task, pid);
           break;
+
         case (SIGCHLD):
           fprintf(stderr, "[   info] %d's child has exited\n", cur_task->pid);
           break;
+
         default:
           fprintf(stderr, "[    err] unknown stop signal: %d\n", WSTOPSIG(status));
           break;
