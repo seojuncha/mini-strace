@@ -210,7 +210,7 @@ static void print_syscall(const struct task *t, const struct user_regs_struct *r
 
 static void handle_event(struct task *tasks, pid_t pid, int ws) {
   struct task *t;
-  unsigned long new_pid = 0;
+  unsigned long ret = 0;
 
   switch (ws) {
     case (SIGTRAP | (PTRACE_EVENT_EXEC << 8)):
@@ -223,17 +223,21 @@ static void handle_event(struct task *tasks, pid_t pid, int ws) {
       break;
 
     case (SIGTRAP | (PTRACE_EVENT_FORK << 8)):
-      fprintf(stderr, "[  debug] event_fork\n");
-      ptrace(PTRACE_GETEVENTMSG, pid, 0L, &new_pid);
-      add_traced_task(tasks, new_pid, 1);
+      ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
+      fprintf(stderr, "[  debug] event_fork: %lu\n", ret);
+      add_traced_task(tasks, ret, 1);
       break;
 
     case (SIGTRAP | (PTRACE_EVENT_CLONE << 8)):
-      fprintf(stderr, "[  debug] event_clone\n");
-      ptrace(PTRACE_GETEVENTMSG, pid, 0L, &new_pid);
-      add_traced_task(tasks, new_pid, 1);
+      ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
+      fprintf(stderr, "[  debug] event_clone: %lu\n", ret);
+      add_traced_task(tasks, ret, 1);
       break;
-
+    
+    case (SIGTRAP | (PTRACE_EVENT_EXIT << 8)):
+      ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
+      fprintf(stderr, "[  debug] event_exit: %lu\n", ret);
+      break;
     default:
       fprintf(stderr, "[err] unknown ptrace_event_*\n");
       break;
@@ -269,7 +273,7 @@ static void handle_syscall(struct task *cur_task, pid_t pid) {
 int tracer_loop(pid_t tracee_pid) {
   int status;
   pid_t pid;
-  long trace_opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE;
+  long trace_opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXIT | PTRACE_O_TRACEVFORK;
 
   struct user_regs_struct reg;
 
