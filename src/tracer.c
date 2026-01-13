@@ -45,7 +45,7 @@ void add_traced_task(struct task *tasks, pid_t pid, int is_leaf) {
       break;
     }
   }
-  fprintf(stderr, "[  debug] [%d] add new traced task: %d\n", i, pid);
+  printf("[  debug] [%d] add new traced task: %d\n", i, pid);
 }
 
 void remove_traced_task(struct task *tasks, pid_t pid) {
@@ -54,8 +54,10 @@ void remove_traced_task(struct task *tasks, pid_t pid) {
     struct task *t = &tasks[i];
     if (t->pid == pid) {
       memset(t, 0, sizeof(struct task));
+      break;
     }
   }
+  printf("[  debug] [%d] remove traced task: %d\n", i, pid);
 }
 
 int have_alive_tasks(const struct task *tasks) {
@@ -155,7 +157,7 @@ static void print_syscall(const struct task *t, const struct user_regs_struct *r
     case 0:  /* read */
     case 1:  /* write */
       read_data(t->pid, str, reg->rsi);
-      fprintf(stderr, "%s (fd=%lld, buf=0x%llx [\"", sysname, reg->rdi, reg->rsi);
+      fprintf(stderr, "%s(fd=%lld, buf=0x%llx[\"", sysname, reg->rdi, reg->rsi);
       for (i = 0; i < (reg->rdx > 60 ? 60 : reg->rdx); i++) {
         if (str[i] == '\n') {
           fprintf(stderr, "\\n");
@@ -170,16 +172,16 @@ static void print_syscall(const struct task *t, const struct user_regs_struct *r
     //   printf("%s[%lld] = 0x%llx\n",sysname, sysnum, retval);
     //   break;
     case 3:
-      fprintf(stderr, "%s () = %lld\n", sysname, (long long)retval);
+      fprintf(stderr, "%s(fd=%lld) = %lld\n", sysname, reg->rdi, (long long)retval);
       break;
     case 56:
-      fprintf(stderr, "%s () = %lld\n", sysname, (long long)retval);
+      fprintf(stderr, "%s() = %lld\n", sysname, (long long)retval);
       break;
     case 59:
-      fprintf(stderr, "%s (path=%s) = %d\n", sysname, t->exec_path, t->exec_ret);
+      fprintf(stderr, "%s(path=%s) = %d\n", sysname, t->exec_path, t->exec_ret);
       break;
     case 231:
-      fprintf(stderr, "%s () = %lld\n", sysname, retval);
+      fprintf(stderr, "%s() \n", sysname);
       break;
     case 257: /* openat */ {
       unsigned long long dirfd = reg->rdi;
@@ -189,12 +191,12 @@ static void print_syscall(const struct task *t, const struct user_regs_struct *r
  
       /* is negative */
       if (retval >> 32) {
-        fprintf(stderr, "%s (dirfd=0x%llx, pathname=0x%llx [\"%s\"]) = %s(%lld) %s\n",
+        fprintf(stderr, "%s(dirfd=0x%llx, pathname=0x%llx[\"%s\"]) = %s(%lld) %s\n",
             sysname,
             dirfd, pathname, str,
             err_tbl[~retval].str, (long long)retval+1, strerror(err_tbl[~retval].code));
       } else {
-        fprintf(stderr, "%s (dirfd=0x%llx, pathname=0x%llx [\"%s\"]) = %lld\n",
+        fprintf(stderr, "%s(dirfd=0x%llx, pathname=0x%llx[\"%s\"]) = %lld\n",
             sysname,
             dirfd, pathname, str,
             retval);
@@ -203,7 +205,7 @@ static void print_syscall(const struct task *t, const struct user_regs_struct *r
     }
 
     default:
-      fprintf(stderr, "%s () = %lld\n", sysname, (long long)retval);
+      fprintf(stderr, "%s() = %lld\n", sysname, (long long)retval);
       break;
   }
 }
@@ -214,7 +216,7 @@ static void handle_event(struct task *tasks, pid_t pid, int ws) {
 
   switch (ws) {
     case (SIGTRAP | (PTRACE_EVENT_EXEC << 8)):
-      fprintf(stderr, "[  debug] event_exec\n");
+      printf("[  debug] event_exec\n");
       t = find_task(tasks, pid);
       if (t) {
         read_exe_path(pid, t->exec_path, sizeof(t->exec_path));
@@ -224,22 +226,26 @@ static void handle_event(struct task *tasks, pid_t pid, int ws) {
 
     case (SIGTRAP | (PTRACE_EVENT_FORK << 8)):
       ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
-      fprintf(stderr, "[  debug] event_fork: %lu\n", ret);
+      printf("[  debug] event_fork: %lu\n", ret);
       add_traced_task(tasks, ret, 1);
       break;
 
     case (SIGTRAP | (PTRACE_EVENT_CLONE << 8)):
       ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
-      fprintf(stderr, "[  debug] event_clone: %lu\n", ret);
+      printf("[  debug] event_clone: %lu\n", ret);
       add_traced_task(tasks, ret, 1);
       break;
     
     case (SIGTRAP | (PTRACE_EVENT_EXIT << 8)):
       ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
-      fprintf(stderr, "[  debug] event_exit: %lu\n", ret);
+      printf("[  debug] event_exit: %lu\n", ret);
+      now_ns();
+      fprintf(stderr, "---- child %d exited (code=%lu) ----\n", pid, ret);
+      remove_traced_task(tasks, pid);
       break;
+
     default:
-      fprintf(stderr, "[err] unknown ptrace_event_*\n");
+      printf("[err] unknown ptrace_event_*\n");
       break;
   }
 }
@@ -270,17 +276,15 @@ static void handle_syscall(struct task *cur_task, pid_t pid) {
   }
 }
  
-int tracer_loop(pid_t tracee_pid) {
-  int status;
+int tracer_loop(pid_t tracee_pid) { int status;
   pid_t pid;
   long trace_opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXIT | PTRACE_O_TRACEVFORK;
 
-  struct user_regs_struct reg;
+  struct user_regs_struct reg = {0};
 
   struct task tasks[MAX_TASKS];
   struct task *cur_task = NULL;
  
-  memset(&reg, 0, sizeof(struct user_regs_struct));
   memset(tasks, 0, sizeof(struct task) * MAX_TASKS);
 
   pid = waitpid(tracee_pid, &status, 0);
@@ -306,14 +310,14 @@ int tracer_loop(pid_t tracee_pid) {
 
     cur_task = find_task(tasks, pid);
     if (!cur_task) {
-      fprintf(stderr, "[    err] couldn't find a task: %d\n", pid);
+      printf("[    err] couldn't find a task: %d\n", pid);
       continue;
     }
 
     /* tracee has terminated */
     if (WIFEXITED(status) || WIFSIGNALED(status)) {
       cur_task->alive = 0;
-      fprintf(stderr, "[   info] %d has terminated\n", cur_task->pid);
+      printf("[   info] %d has terminated\n", cur_task->pid);
       continue;
     }
 
@@ -336,11 +340,11 @@ int tracer_loop(pid_t tracee_pid) {
           break;
 
         case (SIGCHLD):
-          fprintf(stderr, "[   info] %d's child has exited\n", cur_task->pid);
+          printf("[   info] %d's child has exited\n", cur_task->pid);
           break;
 
         default:
-          fprintf(stderr, "[    err] unknown stop signal: %d\n", WSTOPSIG(status));
+          printf("[    err] unknown stop signal: %d\n", WSTOPSIG(status));
           break;
       }
       ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
