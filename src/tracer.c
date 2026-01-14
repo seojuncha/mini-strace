@@ -276,7 +276,8 @@ static void handle_syscall(struct task *cur_task, pid_t pid) {
   }
 }
  
-int tracer_loop(pid_t tracee_pid) { int status;
+int tracer_loop(pid_t tracee_pid) {
+  int status;
   pid_t pid;
   long trace_opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXIT | PTRACE_O_TRACEVFORK;
 
