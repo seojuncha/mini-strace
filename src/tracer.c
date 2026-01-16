@@ -9,65 +9,9 @@
 #include <signal.h>
 #include <time.h>
  
+#include "def.h"
 #include "syscalls_x64.h"
 #include "error.h"
-
-#define MAX_TASKS 5
-
-struct task {
-  pid_t pid;
-  char exec_path[128];
-  int exec_ret;
-  int in_syscall;
-  int alive;
-  int is_leaf;   /* is not a root tracee */
-};
-
-struct task *find_task(struct task *tasks, pid_t pid) {
-  int i; 
-  for (i = 0; i < MAX_TASKS; i++) {
-    struct task *t = &tasks[i];
-    if (t->pid == pid)
-      return t;
-  }
-  return NULL;
-}
-
-void add_traced_task(struct task *tasks, pid_t pid, int is_leaf) {
-  int i; 
-  for (i = 0; i < MAX_TASKS; i++) {
-    struct task *t = &tasks[i];
-    if (t->pid == 0) {
-      t->pid = pid;
-      t->in_syscall = 0;
-      t->alive = 1;
-      t->is_leaf = is_leaf;
-      break;
-    }
-  }
-  printf("[  debug] [%d] add new traced task: %d\n", i, pid);
-}
-
-void remove_traced_task(struct task *tasks, pid_t pid) {
-  int i;
-  for (i = 0; i < MAX_TASKS; i++) {
-    struct task *t = &tasks[i];
-    if (t->pid == pid) {
-      memset(t, 0, sizeof(struct task));
-      break;
-    }
-  }
-  printf("[  debug] [%d] remove traced task: %d\n", i, pid);
-}
-
-int have_alive_tasks(const struct task *tasks) {
-  int count = 0;
-  int i;
-  for (i = 0; i < MAX_TASKS; i++) {
-    count += tasks[i].alive;
-  }
-  return count;
-}
 
 static int is_not_unknown(const char *sysname) {
   return strncmp("unknown", sysname, 7);
@@ -119,21 +63,6 @@ static void read_data(pid_t pid, char *str, unsigned long long reg_addr) {
       str[j + (i<<3)] = ((peekdata >> (j * 8)) & 0xff);
     }
   }
-}
-
-static void print_waitpid(pid_t pid, int status) {
-  printf("[  debug] [%d] ", pid);
- 
-  if (WIFEXITED(status))
-      printf("WEXITSTATUS %d\n", WEXITSTATUS(status));
-  else if (WIFSIGNALED(status))
-      printf("WTERMSIG %d\n", WTERMSIG(status));
-  else if (WIFSTOPPED(status))
-      printf("WSTOPSIG %d\n", WSTOPSIG(status));
-  else if (WIFCONTINUED(status))
-      printf("continued\n");
-  else 
-      printf("unkown status, %d\n", status);
 }
 
 static void print_syscall(const struct task *t, const struct user_regs_struct *reg) {
@@ -275,7 +204,7 @@ static void handle_syscall(struct task *cur_task, pid_t pid) {
     cur_task->in_syscall = 0;
   }
 }
- 
+
 int tracer_loop(pid_t tracee_pid) {
   int status;
   pid_t pid;
@@ -349,6 +278,63 @@ int tracer_loop(pid_t tracee_pid) {
           break;
       }
       ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
+    }
+  }
+
+  return 0;
+}
+
+int init_tracee(struct task_block *tb, pid_t tracee_pid) {
+  int ws = 0;
+  pid_t pid = waitpid(tracee_pid, &ws, 0);
+
+  if (pid == -1) {
+    perror("waitpid");
+    return -1;
+  }
+
+  tb->opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXIT | PTRACE_O_TRACEVFORK;
+
+  /* add the first child of tracer, tracee */
+  if (WIFSTOPPED(ws) && (WSTOPSIG(ws) == SIGSTOP)) {
+    add_new_task(tb, pid);
+    ptrace(PTRACE_SETOPTIONS, pid, 0L, tb->opts);
+    ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
+  }
+
+  return 0;
+}
+
+int dispatch_loop(struct task_block *tb) {
+  int ws;
+
+  for (;;) {
+    struct traced_task *t;
+    struct user_regs_struct reg = {0};
+    int pid = waitpid(-1, &ws, __WALL);
+
+    if (pid == -1) {
+      perror("waidpid");
+      return errno;
+    }
+
+    t = get(tb, pid);
+    if (t == NULL) {
+      printf("fail to get traced task\n");
+      return -1;
+    }
+
+    /* tracee has terminated */
+    if (WIFEXITED(ws) || WIFSIGNALED(ws)) {
+      continue;
+    }
+
+    if (!WIFSTOPPED(ws) || WIFCONTINUED(ws)) {
+      continue;
+    }
+
+    switch (WSTOPSIG(ws)) {
+
     }
   }
 
