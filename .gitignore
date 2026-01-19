@@ -63,3 +63,4 @@ mini-strace
 
 # Logs
 logs
+strace_log
