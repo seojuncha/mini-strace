@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 
 #include "def.h"
 #include "tracer.h"
@@ -28,20 +29,12 @@ int main(int argc, char *argv[]) {
     raise(SIGSTOP);
     execve(argv[1], &argv[1], NULL);
     perror("execve");
-  }
-
-#if 0
+  } else {
     struct task_block tb = {0};
     if (init_tracee(&tb, tracee_pid) != 0) {
       fprintf(stderr, "init_tracee error\n");
       return 1;
     }
     return dispatch_loop(&tb);
-#else
-  if (tracer_loop(tracee_pid) != 0) {
-    fprintf(stderr, "abnormal exited tracer loop\n");
-    return 1;
-  }
-  return 0;
-#endif
+  } 
 }
