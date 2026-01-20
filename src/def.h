@@ -7,8 +7,9 @@
 
 #define MAX_TASKS 5
 
-#define TASK_SYSCALL_ENTER (0x0001)
-#define TASK_SYSCALL_EXIT (0x0002)
+#define TASK_SYSCALL_ENTER 0x0001
+#define TASK_SYSCALL_EXIT 0x0002
+#define TASK_ACTIVATED 0x1000
 
 struct task {
   pid_t pid;
@@ -52,6 +53,7 @@ int have_alive_tasks(const struct task *tasks);
 void add_new_task(struct task_block *tb, pid_t pid);
 void remove_task(struct task_block *tb, pid_t pid);
 struct traced_task *get(struct task_block *tb, pid_t pid);
+int alive_tasks(const struct task_block *tb);
 #endif
 
 #endif

@@ -12,10 +12,6 @@
 #include "syscall.h"
 #include "error.h"
 
-static int is_not_unknown(const char *sysname) {
-  return strncmp("unknown", sysname, 7);
-}
-
 void read_exe_path(pid_t pid, char *buf, size_t size) {
   char path[64];
   ssize_t n = 0;
@@ -320,7 +316,7 @@ int dispatch_loop(struct task_block *tb) {
   int ws;
   struct traced_task *t;
 
-  for (;;) {
+  while (alive_tasks(tb)) {
     int pid = waitpid(-1, &ws, __WALL);
 
     if (pid == -1 && errno != 0) {
@@ -368,6 +364,7 @@ int dispatch_loop(struct task_block *tb) {
       reenter(t);
     }
   }
+  printf("normal terminated\n");
   return 0;
 }
 
