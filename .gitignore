@@ -57,6 +57,7 @@ mini-strace
 
 # Temp file
 *.swp
+t0*
 
 # config file
 .vscode
