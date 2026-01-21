@@ -7,20 +7,11 @@
 
 #define MAX_TASKS 5
 
-#define TASK_SYSCALL_ENTER 0x0001
-#define TASK_SYSCALL_EXIT 0x0002
 #define TASK_ACTIVATED 0x1000
 
-struct task {
-  pid_t pid;
+#define TASK_SYSCALL_ENTER 0x0001
+#define TASK_SYSCALL_EXIT 0x0002
 
-  char exec_path[128];
-  int exec_ret;
-
-  int in_syscall;
-  int alive;
-  int is_leaf;   /* is not a root tracee */
-};
 
 struct traced_task {
   int seq;
@@ -30,7 +21,7 @@ struct traced_task {
 
   unsigned long nr;
   char sysname[16];
-  unsigned long ret;
+  unsigned long sysret;
 
   void *user_regs;
 };
@@ -41,19 +32,11 @@ struct task_block {
   struct traced_task tt[MAX_TASKS];
 };
 
-#if 0
-struct task *find_task(struct task *tasks, pid_t pid);
-
-void add_traced_task(struct task *tasks, pid_t pid, int is_leaf);
-void remove_traced_task(struct task *tasks, pid_t pid);
-int have_alive_tasks(const struct task *tasks);
-#else
 
 /* new interfaces */
 void add_new_task(struct task_block *tb, pid_t pid);
 void remove_task(struct task_block *tb, pid_t pid);
 struct traced_task *get(struct task_block *tb, pid_t pid);
 int alive_tasks(const struct task_block *tb);
-#endif
 
 #endif

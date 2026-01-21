@@ -110,6 +110,10 @@ void print_syscall(const struct traced_task *t) {
   }
 }
 
-void reenter(const struct traced_task *t) {
+void reenter_syscall(const struct traced_task *t) {
   ptrace(PTRACE_SYSCALL, t->pid, 0L, 0L);
+}
+
+void set_trace_options(struct traced_task *t, long opts) {
+  ptrace(PTRACE_SETOPTIONS, t->pid, 0L, opts);
 }
