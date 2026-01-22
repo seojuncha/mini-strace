@@ -4,39 +4,57 @@
 #include <sys/wait.h>
 #include <string.h>
 #include <stdint.h>
+#include <time.h>
 
 #define MAX_TASKS 5
 
-#define TASK_ACTIVATED 0x1000
+/* traced_task options */
+#define IN_SYSCALL 0x01
+#define HAS_NO_RETURN 0x02
+#define START_TRACE 0x10
+#define TASK_ACTIVATED 0x20
 
-#define TASK_SYSCALL_ENTER 0x0001
-#define TASK_SYSCALL_EXIT 0x0002
+/* global tracer options */
+#define VIEW_TIMELINE 0x100
+#define SHOW_PID 0x200
+#define SHOW_RELATIVE_TIME 0x400
 
+/* colored text */
+#define RED  "\033[0;31m"
+#define GREEN "\033[0;32m"
+#define YELLOW "\033[0;33m"
+#define RESET "\033[0m"
 
-struct traced_task {
-  int seq;
-  int pid;
-  int tid;
-  int status;
+struct traced_task
+{
+	int seq;
+	int pid;
+	int tid;
+	int status;
 
-  unsigned long nr;
-  char sysname[16];
-  unsigned long sysret;
+	int nr;
+	char syscall_name[16];
+	unsigned long syscall_ret;
 
-  void *user_regs;
+	void *user_regs;
+
+	struct timespec last_entry_ts;
+	struct timespec entry_ts;
 };
 
-struct task_block {
-  pid_t tracee_pid;
-  long opts;
-  struct traced_task tt[MAX_TASKS];
+struct task_block
+{
+	pid_t tracee_pid;
+	long opts;
+
+	struct traced_task tt[MAX_TASKS];
 };
 
 
 /* new interfaces */
-void add_new_task(struct task_block *tb, pid_t pid);
-void remove_task(struct task_block *tb, pid_t pid);
-struct traced_task *get(struct task_block *tb, pid_t pid);
-int alive_tasks(const struct task_block *tb);
+void add_new_task(struct task_block * tb, pid_t pid);
+void remove_task(struct task_block * tb, pid_t pid);
+struct traced_task *get(struct task_block * tb, pid_t pid);
+int alive_tasks(const struct task_block * tb);
 
 #endif

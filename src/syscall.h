@@ -3,19 +3,19 @@
 
 #include "def.h"
 
-int entering(const struct traced_task *t);
-int exiting(const struct traced_task *t);
+int entering(const struct traced_task * t);
+int exiting(const struct traced_task * t);
 
-void done_entering(struct traced_task *t);
-void done_exiting(struct traced_task *t);
+void done_entering(struct traced_task * t);
+void done_exiting(struct traced_task * t, long opts);
 
-int decode_syscall_enter(struct traced_task *t);
-int decode_syscall_exit(struct traced_task *t);
+int decode_syscall_enter(struct traced_task * t, long opts);
+int decode_syscall_exit(struct traced_task * t, long opts);
 
-void print_syscall(const struct traced_task *t);
+void print_syscall(const struct traced_task * t);
 
-void reenter_syscall(const struct traced_task *t);
+void reenter_syscall(const struct traced_task * t);
 
-void set_trace_options(struct traced_task *t, long opts);
+void set_trace_options(struct traced_task * t, long opts);
 
 #endif
