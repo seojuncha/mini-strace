@@ -203,6 +203,7 @@ void print_syscall_ret(const struct traced_task * t, long opts)
 		fprintf(stderr, " = ");
 	}
 
+	// TODO: exit_group is failed in here. because of no sigtrap event!
 	if (t->status & HAS_NO_RETURN) {
 		fprintf(stderr, "?");
 		goto newline;

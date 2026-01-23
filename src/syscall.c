@@ -76,6 +76,9 @@ int decode_syscall_enter(struct traced_task * t, long opts)
 	sn = syscall_name(t->nr);
 	strncpy(t->syscall_name, sn, strlen(sn) + 1);
 
+	if (t->nr == sys_exit_group)
+		t->status |= HAS_NO_RETURN;
+
 	return 0;
 }
 
