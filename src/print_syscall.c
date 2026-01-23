@@ -1,6 +1,18 @@
+#include <sys/user.h>
 #include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+
+#include "def.h"
 
 #define ERR_ITEM(error_code) { error_code, #error_code }
+
+enum print_digit_opt
+{
+	digit_opt_dec,
+	digit_opt_hex
+};
 
 struct error_table
 {
@@ -42,3 +54,193 @@ struct error_table
 	ERR_ITEM(EDOM),
 	ERR_ITEM(ERANGE)
 };
+
+void print_pid(const struct traced_task * t)
+{
+	fprintf(stderr, "pid=%d tid=%d ", t->pid, t->tid);
+}
+ 
+void print_seq(const struct traced_task * t)
+{
+	fprintf(stderr, "[%06d] ", t->seq);
+}
+
+void print_relative_time(const struct traced_task * t)
+{
+	long sec, nano;
+	double duration;
+	
+	if (t->status & START_TRACE) {
+		fprintf(stderr, "+0.000ms ");
+	} else {
+		sec = t->entry_ts.tv_sec - t->last_entry_ts.tv_sec;
+		nano = t->entry_ts.tv_nsec - t->last_entry_ts.tv_nsec;
+		duration = sec * 1000 + (double)nano / 1000000.0;
+		fprintf(stderr, "%+.03fms ", duration);
+	}
+}
+
+void print_args_digit(int has_next, const char *n, int v, enum print_digit_opt o)
+{
+	if (o == digit_opt_dec)
+		fprintf(stderr, "%s=%d", n, v);
+	else
+		fprintf(stderr, "%s=0x%x", n, v);
+
+	if (has_next)
+		fprintf(stderr, ", ");
+}
+ 
+void print_args_str(int has_next, const char *name, const char *str, unsigned int size)
+{
+	fprintf(stderr, "%s=\"", name); 
+
+	for (int i = 0; i < size; i++) {
+		if (str[i] == '\n')
+			fprintf(stderr, "\\n");
+		else
+			fprintf(stderr, "%c", str[i]);
+	}
+
+	fprintf(stderr, "\"");
+	if (has_next)
+		fprintf(stderr, ", ");
+}
+ 
+void print_args_macro(int has_next, const char *name, int value)
+{
+	fprintf(stderr, "%s=", name);
+	if (value == AT_FDCWD) {
+		fprintf(stderr, "AT_FDCWD");
+		goto next; 
+	} 
+	fprintf(stderr, "O_RDONLY");
+
+	if (value & O_CLOEXEC)
+	fprintf(stderr, "|O_CLOEXEC");
+	if (value & O_APPEND)
+	fprintf(stderr, "|O_APPEND");
+	if (value & O_ASYNC)
+	fprintf(stderr, "|O_ASYNC");
+
+next:
+	if (has_next)
+		fprintf(stderr, ", ");
+}
+
+void print_syscall_args(const struct traced_task * t, long opts)
+{
+	struct user_regs_struct *reg = (struct user_regs_struct *)(t->user_regs);
+
+	fprintf(stderr, " (");
+	switch (t->nr) {
+		case sys_write:
+			print_args_digit(1, "fd", reg->rdi, digit_opt_dec);
+			print_args_digit(1, "buf", reg->rsi, digit_opt_hex);
+			// print_args_str(1, "buf", f->r.b, f->r.c);
+			print_args_digit(0, "count", reg->rdx, digit_opt_dec);
+			break;
+		
+		case sys_clone:
+			print_args_digit(1, "fn", reg->rdi, digit_opt_hex);
+			print_args_digit(1, "stack", reg->rsi, digit_opt_hex);
+			break;
+
+		case sys_openat:
+			if (reg->rsi == AT_FDCWD)
+				print_args_macro(1, "dirfd", reg->rdi);
+			else 
+				print_args_digit(1, "dirfd", reg->rdi, digit_opt_dec);
+			// print_args_str(1, "pathname", f->r.b, strlen(f->r.b));
+			print_args_macro(0, "flags", reg->rdx);
+			break;
+		
+		case sys_brk:
+			print_args_digit(0, "addr", reg->rdi, digit_opt_hex);
+			break;
+
+		case sys_mmap:
+			print_args_digit(1, "addr", reg->rdi, digit_opt_hex);
+			print_args_digit(1, "length", reg->rsi, digit_opt_dec);
+			print_args_digit(1, "prot", reg->rdx, digit_opt_hex);
+			print_args_digit(0, "flags", reg->r10, digit_opt_hex);
+			break;
+		
+		case sys_execve:
+			print_args_digit(1, "pathname", reg->rdi, digit_opt_hex);
+			print_args_digit(1, "argv", reg->rsi, digit_opt_hex);
+			print_args_digit(0, "envp", reg->rdx, digit_opt_hex);
+			break;
+
+		case sys_exit_group:
+			print_args_digit(0, "status", reg->rdi, digit_opt_dec);
+			break;
+
+		default:
+			break;
+	}
+	fprintf(stderr, ")");
+	if (opts & VIEW_TIMELINE)
+		fprintf(stderr, "\n");
+}
+
+void print_ret_detail(int nr, int ret)
+{
+	switch (nr) {
+		case 56:
+			fprintf(stderr, " %s(new thread %d is created)%s", GREEN, ret, RESET);
+			break;
+		default:
+			break;
+	}
+}
+
+void print_syscall_ret(const struct traced_task * t, long opts)
+{
+	if (opts & VIEW_TIMELINE) {
+		fprintf(stderr, " ret = ");
+	} else {
+		fprintf(stderr, " = ");
+	}
+
+	if (t->status & HAS_NO_RETURN) {
+		fprintf(stderr, "?");
+		goto newline;
+	}
+	else
+		fprintf(stderr, "%ld", t->syscall_ret);
+
+	if (t->syscall_ret < 0) {
+		fprintf(stderr, "%s <=== %s (%s)%s",
+			RED, err_tbl[abs(t->syscall_ret)].str, strerror(err_tbl[abs(t->syscall_ret)].code), RESET);
+	}
+	print_ret_detail(t->nr, t->syscall_ret);
+
+newline:
+        (opts & VIEW_TIMELINE) ? fprintf(stderr, "\n\n") : fprintf(stderr, "\n");
+}
+
+void print_syscall(const struct traced_task * t, long opts, int in_syscall)
+{
+	if (!in_syscall) {
+		print_seq(t);
+		if (opts & SHOW_RELATIVE_TIME)
+			print_relative_time(t);
+		if (opts & SHOW_PID)
+			print_pid(t);
+		if (opts & VIEW_TIMELINE)
+			fprintf(stderr, "ENTER ");
+		fprintf(stderr, "%s", t->syscall_name);
+		print_syscall_args(t, opts);
+	} else {
+		if (opts & VIEW_TIMELINE) {
+			print_seq(t);
+			if (opts & SHOW_RELATIVE_TIME)
+				print_relative_time(t);
+			if (opts & SHOW_PID)
+				print_pid(t);
+			fprintf(stderr, "EXIT  %s", t->syscall_name);
+		}
+		print_syscall_ret(t, opts);
+	}
+}

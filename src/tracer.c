@@ -11,6 +11,7 @@
 #include <errno.h>
 
 #include "syscall.h"
+#include "print_syscall.h"
 
 /*
 void read_exe_path(pid_t pid, char *buf, size_t size) {
@@ -83,16 +84,17 @@ static void handle_event(struct task_block *tb, pid_t pid, int ws) {
 static void handle_syscall(struct task_block * tb, pid_t pid)
 {
 	struct traced_task * t = get(tb, pid);
+
 	if (entering(t)) {
 		if (decode_syscall_enter(t, tb->opts) != 0)
 			return;
 		done_entering(t);
-		//print_syscall(t, 0);
+		print_syscall(t, tb->opts, 0);
 	} else if (exiting(t)) {
 		if (decode_syscall_exit(t, tb->opts) != 0)
 			return;
 		done_exiting(t, tb->opts);
-		//print_syscall(t, 1);
+		print_syscall(t, tb->opts, 1);
 	} else {
 		printf("unkonwn status: %d\n", t->status);
 	}
@@ -107,18 +109,13 @@ int init_tracee(struct task_block * tb, pid_t tracee_pid)
 		perror("waitpid 1");
 		return -1;
 	}
-
-	tb->opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXIT | PTRACE_O_TRACEVFORK;
-
-	printf("init_tracee\n");
-
+	tb->trace_opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXIT | PTRACE_O_TRACEVFORK;
 	/* add the first child of tracer, tracee */
 	if (WIFSTOPPED(ws) && (WSTOPSIG(ws) == SIGSTOP)) {
 		add_new_task(tb, pid);
-		ptrace(PTRACE_SETOPTIONS, pid, 0L, tb->opts);
+		ptrace(PTRACE_SETOPTIONS, pid, 0L, tb->trace_opts);
 		ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
 	}
-
 	return 0;
 }
 
@@ -151,7 +148,7 @@ int dispatch_loop(struct task_block * tb)
 			switch (WSTOPSIG(ws)) {
 			/* signal delivery stopped */
 			case (SIGSTOP):
-				set_trace_options(t, tb->opts);
+				set_trace_options(t, tb->trace_opts);
 				break;
 
 			/* PTRACE_EVENT_* stopped */

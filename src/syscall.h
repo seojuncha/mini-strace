@@ -12,8 +12,6 @@ void done_exiting(struct traced_task * t, long opts);
 int decode_syscall_enter(struct traced_task * t, long opts);
 int decode_syscall_exit(struct traced_task * t, long opts);
 
-void print_syscall(const struct traced_task * t);
-
 void reenter_syscall(const struct traced_task * t);
 
 void set_trace_options(struct traced_task * t, long opts);

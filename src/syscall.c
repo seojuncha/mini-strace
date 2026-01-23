@@ -6,45 +6,33 @@
 
 #include "syscall.h"
 
-enum sys
+static const char *syscall_name(unsigned long nr)
 {
-	sys_read,
-	sys_write,
-	sys_open,
-	sys_close,
-	sys_clone = 56,
-	sys_fork,
-	sys_vfork,
-	sys_execve,
-	sys_exit,
-	sys_exit_group = 231,
-	sys_openat = 257
-};
-
-static const char *syscall_name(unsigned long nr) {
 	switch(nr) {
-		case 0: return "read";
-		case 1: return "write";
-		case 2: return "open";
-		case 3: return "close";
-		// case 4: return "stat";
-		// case 5: return "fstat";
-		// case 8: return "lseek";
-		// case 9: return "mmap";
-		// case 10: return "mprotect";
-		// case 11: return "munmap";
-		// case 12: return "brk";
-		// case 17: return "pread64";
-		// case 18: return "pwrite64";
-		// case 21: return "access";
-		//case 39: return "getpid";
-		case 56: return "clone";
-		case 57: return "fork";
-		case 58: return "vfork";
-		case 59: return "execve";
-		case 60: return "exit";
-		case 231: return "exit_group";
-		case 257: return "openat";
+		case sys_read: return "read";
+		case sys_write: return "write";
+		case sys_open: return "open";
+		case sys_openat: return "openat";
+		case sys_access: return "acceess";
+		case sys_close: return "close";
+		case sys_accept: return "accept";
+		case sys_pread64: return "pread64";
+		case sys_mprotect: return "mprotect";
+		case sys_brk: return "brk";
+		case sys_mmap: return "mmap";
+		case sys_munmap: return "munmap";
+		case sys_fstat: return "fstat";
+		case sys_clone: return "clone";
+		case sys_fork: return "fork";
+		case sys_vfork: return "vfork";
+		case sys_execve: return "execve";
+		case sys_exit: return "exit";
+		case sys_exit_group: return "exit_group";
+		case sys_set_tid_address: return "set_tid_address";
+		case sys_set_robust_list: return "set_robust_list";
+		case sys_arch_prctl: return "arch_prctl";
+		case sys_prlimit64: return "prlimit64";
+		case sys_rseq: return "rseq";
 		default: return "unknown";
 	}
 }
@@ -80,9 +68,7 @@ int decode_syscall_enter(struct traced_task * t, long opts)
 	if (!(t->status & START_TRACE)) {
 		t->last_entry_ts.tv_sec = t->entry_ts.tv_sec;
 		t->last_entry_ts.tv_nsec = t->entry_ts.tv_nsec;
-	} else {
-		t->status &= ~START_TRACE;
-	}
+	} 
 	clock_gettime(CLOCK_MONOTONIC, &t->entry_ts);
 
 	ptrace(PTRACE_GETREGS, t->tid, 0, reg);
@@ -106,6 +92,9 @@ int decode_syscall_exit(struct traced_task * t, long opts)
 		printf("check point\n");
 		return -1;
 	}
+
+	if (t->status & START_TRACE)
+		t->status &= ~START_TRACE;
 
 	if (opts & VIEW_TIMELINE) {
 		if (!(t->status & START_TRACE)) {
