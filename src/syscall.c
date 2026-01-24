@@ -1,5 +1,6 @@
 #include <sys/ptrace.h>
 #include <sys/user.h>
+#include <sys/syscall.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <time.h>
@@ -9,30 +10,30 @@
 static const char *syscall_name(unsigned long nr)
 {
 	switch(nr) {
-		case sys_read: return "read";
-		case sys_write: return "write";
-		case sys_open: return "open";
-		case sys_openat: return "openat";
-		case sys_access: return "acceess";
-		case sys_close: return "close";
-		case sys_accept: return "accept";
-		case sys_pread64: return "pread64";
-		case sys_mprotect: return "mprotect";
-		case sys_brk: return "brk";
-		case sys_mmap: return "mmap";
-		case sys_munmap: return "munmap";
-		case sys_fstat: return "fstat";
-		case sys_clone: return "clone";
-		case sys_fork: return "fork";
-		case sys_vfork: return "vfork";
-		case sys_execve: return "execve";
-		case sys_exit: return "exit";
-		case sys_exit_group: return "exit_group";
-		case sys_set_tid_address: return "set_tid_address";
-		case sys_set_robust_list: return "set_robust_list";
-		case sys_arch_prctl: return "arch_prctl";
-		case sys_prlimit64: return "prlimit64";
-		case sys_rseq: return "rseq";
+		case SYS_read: return "read";
+		case SYS_write: return "write";
+		case SYS_open: return "open";
+		case SYS_openat: return "openat";
+		case SYS_access: return "acceess";
+		case SYS_close: return "close";
+		case SYS_accept: return "accept";
+		case SYS_pread64: return "pread64";
+		case SYS_mprotect: return "mprotect";
+		case SYS_brk: return "brk";
+		case SYS_mmap: return "mmap";
+		case SYS_munmap: return "munmap";
+		case SYS_fstat: return "fstat";
+		case SYS_clone: return "clone";
+		case SYS_fork: return "fork";
+		case SYS_vfork: return "vfork";
+		case SYS_execve: return "execve";
+		case SYS_exit: return "exit";
+		case SYS_exit_group: return "exit_group";
+		case SYS_set_tid_address: return "set_tid_address";
+		case SYS_set_robust_list: return "set_robust_list";
+		case SYS_arch_prctl: return "arch_prctl";
+		case SYS_prlimit64: return "prlimit64";
+		case SYS_rseq: return "rseq";
 		default: return "unknown";
 	}
 }
@@ -76,7 +77,7 @@ int decode_syscall_enter(struct traced_task * t, long opts)
 	sn = syscall_name(t->nr);
 	strncpy(t->syscall_name, sn, strlen(sn) + 1);
 
-	if (t->nr == sys_exit_group)
+	if (t->nr == SYS_exit_group)
 		t->status |= HAS_NO_RETURN;
 
 	return 0;
@@ -89,7 +90,7 @@ int decode_syscall_exit(struct traced_task * t, long opts)
 
 	ptrace(PTRACE_GETREGS, t->tid, 0, reg);
 	nr = reg->orig_rax;
-	t->syscall_ret = reg->rax;
+	t->syscall_ret = (long long)reg->rax;
 
 	if (t->nr != nr) {
 		printf("check point\n");
