@@ -36,7 +36,9 @@ struct traced_task
 	char syscall_name[16];
 	long long syscall_ret;
 
-	void *user_regs;
+	void * user_regs;
+	char * mem_buf;
+	size_t mem_sz;
 
 	struct timespec last_entry_ts;
 	struct timespec entry_ts;

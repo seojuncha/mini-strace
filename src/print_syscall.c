@@ -20,6 +20,7 @@ struct error_table
 	int code;
 	char str[16];
 } err_tbl[] = {
+	{0, ""},   /* dummy for zero index */
 	ERR_ITEM(EPERM),
 	ERR_ITEM(ENOENT),
 	ERR_ITEM(ESRCH),
@@ -92,11 +93,16 @@ void print_args_digit(int has_next, const char *n, int v, enum print_digit_opt o
 		fprintf(stderr, ", ");
 }
  
-void print_args_str(int has_next, const char *name, const char *str, unsigned int size)
+void print_args_str(int has_next, const char *name, const char *str)
 {
-	fprintf(stderr, "%s=\"", name); 
+	size_t len = strlen(str) + 1;
 
-	for (int i = 0; i < size; i++) {
+	/* TODO: have to filter the option(max_length) */
+	if (len > 64)
+		len = 64;
+
+	fprintf(stderr, "%s=\"", name); 
+	for (int i = 0; i < len; i++) {
 		if (str[i] == '\n')
 			fprintf(stderr, "\\n");
 		else
@@ -137,11 +143,10 @@ void print_syscall_args(const struct traced_task * t, long opts)
 	switch (t->nr) {
 		case SYS_write:
 			print_args_digit(1, "fd", reg->rdi, digit_opt_dec);
-			print_args_digit(1, "buf", reg->rsi, digit_opt_hex);
-			// print_args_str(1, "buf", f->r.b, f->r.c);
+			print_args_str(1, "buf", t->mem_buf);
 			print_args_digit(0, "count", reg->rdx, digit_opt_dec);
 			break;
-		
+
 		case SYS_close:
 			print_args_digit(0, "fd", reg->rdi, digit_opt_dec);
 			break;
@@ -150,14 +155,18 @@ void print_syscall_args(const struct traced_task * t, long opts)
 			print_args_digit(1, "fn", reg->rdi, digit_opt_hex);
 			print_args_digit(1, "stack", reg->rsi, digit_opt_hex);
 			break;
+		
+		case SYS_access:
+			print_args_str(1, "pathname", t->mem_buf);
+			print_args_digit(0, "mode", reg->rsi, digit_opt_hex);
+			break;
 
 		case SYS_openat:
 			if ((int)reg->rdi == AT_FDCWD)
 				print_args_macro(1, "dirfd", reg->rdi);
 			else 
 				print_args_digit(1, "dirfd", reg->rdi, digit_opt_dec);
-			 print_args_digit(1, "pathname", reg->rsi, digit_opt_hex);
-			// print_args_str(1, "pathname", f->r.b, strlen(f->r.b));
+			print_args_str(1, "pathname", t->mem_buf);
 			print_args_macro(0, "flags", reg->rdx);
 			break;
 		
@@ -184,7 +193,7 @@ void print_syscall_args(const struct traced_task * t, long opts)
 			break;
 
 		case SYS_execve:
-			print_args_digit(1, "pathname", reg->rdi, digit_opt_hex);
+			// print_args_str(1, "pathname", t->mem_buf, strlen(t->mem_buf) + 1);
 			print_args_digit(1, "argv", reg->rsi, digit_opt_hex);
 			print_args_digit(0, "envp", reg->rdx, digit_opt_hex);
 			break;
@@ -208,7 +217,7 @@ void print_syscall_args(const struct traced_task * t, long opts)
 void print_ret_detail(int nr, long long ret)
 {
 	switch (nr) {
-		case 56:
+		case SYS_clone:
 			fprintf(stderr, " %s(new thread %lld is created)%s", GREEN, ret, RESET);
 			break;
 		default:
@@ -237,8 +246,9 @@ void print_syscall_ret(const struct traced_task * t, long opts)
 	}
 
 	if (t->syscall_ret < 0) {
+		int idx = abs(t->syscall_ret);
 		fprintf(stderr, "%s <=== %s (%s)%s",
-			RED, err_tbl[abs(t->syscall_ret)].str, strerror(err_tbl[abs(t->syscall_ret)].code), RESET);
+			RED, err_tbl[idx].str, strerror(err_tbl[idx].code), RESET);
 	}
 	print_ret_detail(t->nr, t->syscall_ret);
 

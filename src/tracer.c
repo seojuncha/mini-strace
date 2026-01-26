@@ -28,20 +28,6 @@ void read_exe_path(pid_t pid, char *buf, size_t size) {
   }
 }
 
-static void read_data(pid_t pid, char *str, unsigned long long reg_addr) {
-  int i, j;
-  unsigned long long addr;
-  long peekdata;
-
- for (i = 0; i < 8; i++) {
-    addr = reg_addr + (i<<3);
-    peekdata = ptrace(PTRACE_PEEKDATA, pid, addr, NULL);
-    for (j = 0; j < 8; j++) {
-      str[j + (i<<3)] = ((peekdata >> (j * 8)) & 0xff);
-    }
-  }
-}
-
 static void handle_event(struct task_block *tb, pid_t pid, int ws) {
   struct task *t;
   unsigned long ret = 0;

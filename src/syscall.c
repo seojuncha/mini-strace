@@ -2,6 +2,7 @@
 #include <sys/user.h>
 #include <sys/syscall.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <time.h>
 
@@ -61,6 +62,25 @@ void done_exiting(struct traced_task * t, long opts)
 		t->seq++;
 }
 
+#define WORD_BYTES sizeof(long)
+
+void read_memory(struct traced_task * t, unsigned long reg_addr, size_t sz)
+{
+	if (t->mem_buf) {
+		fprintf(stderr, "memory check point\n");
+		free(t->mem_buf);
+	}
+	t->mem_buf = calloc(sz + 1, 1);
+
+	for (size_t off = 0; off < sz; off += WORD_BYTES) {
+		unsigned long addr = reg_addr + off;
+		long ret = ptrace(PTRACE_PEEKDATA, t->tid, addr, NULL);
+		size_t n = sz - off;
+		if (n > WORD_BYTES) n = WORD_BYTES;
+			memcpy(t->mem_buf + off, &ret, n);
+	}
+}
+
 int decode_syscall_enter(struct traced_task * t, long opts)
 {
 	struct user_regs_struct *reg = (struct user_regs_struct *)(t->user_regs);
@@ -77,9 +97,26 @@ int decode_syscall_enter(struct traced_task * t, long opts)
 	sn = syscall_name(t->nr);
 	strncpy(t->syscall_name, sn, strlen(sn) + 1);
 
-	if (t->nr == SYS_exit_group)
-		t->status |= HAS_NO_RETURN;
+	switch (t->nr) {
+		case SYS_write:
+			read_memory(t, reg->rsi, reg->rdx);
+			break;
 
+		case SYS_openat:
+			read_memory(t, reg->rsi, 32);
+			break;
+
+		case SYS_access:
+			read_memory(t, reg->rdi, 32);
+			break;
+
+		case SYS_exit_group:
+			t->status |= HAS_NO_RETURN;
+			break;
+
+		default:
+			break;
+	}
 	return 0;
 }
 

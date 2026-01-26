@@ -36,8 +36,8 @@ int main(int argc, char * argv[])
 		return tracee_entry(argc, argv);
 	} else {
 		struct task_block tb = {0};
-		tb.opts |= VIEW_TIMELINE | SHOW_PID | SHOW_RELATIVE_TIME;
-		// tb.opts |= SHOW_PID | SHOW_RELATIVE_TIME;
+		// tb.opts |= VIEW_TIMELINE | SHOW_PID | SHOW_RELATIVE_TIME;
+		tb.opts |= SHOW_PID | SHOW_RELATIVE_TIME;
 		if (init_tracee(&tb, tracee_pid) != 0) {
 			fprintf(stderr, "init_tracee error\n");
 			return 1;

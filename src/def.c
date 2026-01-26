@@ -48,7 +48,10 @@ void remove_task(struct task_block * tb, pid_t pid)
 	for (int i = 0; i < MAX_TASKS; i++) {
 		struct traced_task *t = &(tb->tt[i]);
 		if (t->pid == pid) {
-			free(t->user_regs);
+			if (t->user_regs)
+				free(t->user_regs);
+			if (t->mem_buf)
+				free(t->mem_buf);
 			memset(t, 0, sizeof(struct traced_task));
 			printf("%d removed\n", pid);
 			break;
