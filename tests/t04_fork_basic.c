@@ -13,7 +13,7 @@ int main(void) {
 
   if (pid == 0) {
     return write(1, "hello child\n", 12);
+  } else {
+    return write(1, "I'm parent\n", 11);
   }
-
-  return write(1, "I'm parent\n", 11);
 }

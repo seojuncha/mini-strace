@@ -3,6 +3,6 @@
 
 #include "def.h"
 
-void print_syscall(const struct traced_task *t, long opts, int in_syscall);
+void print_syscall(const struct traced_task *t, int seq, long opts, int in_syscall);
 
 #endif

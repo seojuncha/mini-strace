@@ -13,59 +13,40 @@
 #include "syscall.h"
 #include "print_syscall.h"
 
-/*
-void read_exe_path(pid_t pid, char *buf, size_t size) {
-  char path[64];
-  ssize_t n = 0;
-
-  sprintf(path, "/proc/%d/exe", pid);
-  n = readlink(path, buf, size - 1);
-
-  if (n >= 0) {
-    buf[n] = '\n';
-  } else {
-    sprintf(buf,"??");
-  }
-}
-
 static void handle_event(struct task_block *tb, pid_t pid, int ws) {
-  struct task *t;
-  unsigned long ret = 0;
+	struct traced_task *t = get(tb, pid);
+	unsigned long ret = 0;
 
-  switch (ws) {
-    case (SIGTRAP | (PTRACE_EVENT_EXEC << 8)):
-      printf("[  debug] event_exec\n");
-      t = get(tb, pid);
-      if (t) {
-        read_exe_path(pid, t->exec_path, sizeof(t->exec_path));
-        // printf("==== after EXECVE pid: %d [\"%s\"]", pid, t->exec_path);
-      }
-      break;
+	switch (ws) {
+		case (SIGTRAP | (PTRACE_EVENT_EXEC << 8)):
+			ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
+			printf("[  debug] event_exec: %lu\n", ret);
+			decode_event(t, PTRACE_EVENT_EXEC);
+			break;
 
-    case (SIGTRAP | (PTRACE_EVENT_FORK << 8)):
-      ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
-      printf("[  debug] event_fork: %lu\n", ret);
-      add_new_task(tb, ret);
-      break;
+		case (SIGTRAP | (PTRACE_EVENT_FORK << 8)):
+			ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
+			printf("[  debug] event_fork: %lu\n", ret);
+			add_new_task(tb, ret);
+			break;
 
-    case (SIGTRAP | (PTRACE_EVENT_CLONE << 8)):
-      ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
-      printf("[  debug] event_clone: %lu\n", ret);
-      add_new_task(tb, ret);
-      break;
-    
-    case (SIGTRAP | (PTRACE_EVENT_EXIT << 8)):
-      ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
-      printf("[  debug] event_exit: %lu\n", ret);
-      fprintf(stderr, "---- child %d exited (code=%lu) ----\n", pid, ret);
-      break;
+		case (SIGTRAP | (PTRACE_EVENT_CLONE << 8)):
+			ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
+			printf("[  debug] event_clone: %lu\n", ret);
+			add_new_task(tb, ret);
+			break;
 
-    default:
-      printf("[err] unknown ptrace_event_*\n");
-      break;
-  }
+		case (SIGTRAP | (PTRACE_EVENT_EXIT << 8)):
+			ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
+			printf("[  debug] event_exit: %d\n", (int)ret);
+			fprintf(stderr, "---- child %d exited (code=%d) ----\n", pid, (int)ret);
+			break;
+
+		default:
+			printf("[err] unknown ptrace_event_*\n");
+			break;
+	}
 }
-*/
 
 static void handle_syscall(struct task_block * tb, pid_t pid)
 {
@@ -74,13 +55,13 @@ static void handle_syscall(struct task_block * tb, pid_t pid)
 	if (entering(t)) {
 		if (decode_syscall_enter(t, tb->opts) != 0)
 			return;
-		done_entering(t);
-		print_syscall(t, tb->opts, 0);
+		done_entering(t, &tb->seq);
+		print_syscall(t, tb->seq, tb->opts, 0);
 	} else if (exiting(t)) {
 		if (decode_syscall_exit(t, tb->opts) != 0)
 			return;
-		done_exiting(t, tb->opts);
-		print_syscall(t, tb->opts, 1);
+		done_exiting(t, &tb->seq, tb->opts);
+		print_syscall(t, tb->seq, tb->opts, 1);
 	} else {
 		printf("unkonwn status: %d\n", t->status);
 	}
@@ -139,7 +120,7 @@ int dispatch_loop(struct task_block * tb)
 
 			/* PTRACE_EVENT_* stopped */
 			case (SIGTRAP):
-				// handle_event(t, pid, (ws >> 8));
+				handle_event(tb, pid, (ws >> 8));
 				break;
 
 			/* syscall stopped */

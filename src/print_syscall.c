@@ -62,9 +62,9 @@ void print_pid(const struct traced_task * t)
 	fprintf(stderr, "pid=%d tid=%d ", t->pid, t->tid);
 }
  
-void print_seq(const struct traced_task * t)
+void print_seq(int seq)
 {
-	fprintf(stderr, "[%06d] ", t->seq);
+	fprintf(stderr, "[%06d] ", seq);
 }
 
 void print_relative_time(const struct traced_task * t)
@@ -193,7 +193,7 @@ void print_syscall_args(const struct traced_task * t, long opts)
 			break;
 
 		case SYS_execve:
-			// print_args_str(1, "pathname", t->mem_buf, strlen(t->mem_buf) + 1);
+			print_args_str(1, "pathname", t->mem_buf);
 			print_args_digit(1, "argv", reg->rsi, digit_opt_hex);
 			print_args_digit(0, "envp", reg->rdx, digit_opt_hex);
 			break;
@@ -218,7 +218,7 @@ void print_ret_detail(int nr, long long ret)
 {
 	switch (nr) {
 		case SYS_clone:
-			fprintf(stderr, " %s(new thread %lld is created)%s", GREEN, ret, RESET);
+			fprintf(stderr, " %s(new thread %lld attached)%s", GREEN, ret, RESET);
 			break;
 		default:
 			break;
@@ -256,10 +256,10 @@ newline:
         (opts & VIEW_TIMELINE) ? fprintf(stderr, "\n\n") : fprintf(stderr, "\n");
 }
 
-void print_syscall(const struct traced_task * t, long opts, int in_syscall)
+void print_syscall(const struct traced_task * t, int seq, long opts, int in_syscall)
 {
 	if (!in_syscall) {
-		print_seq(t);
+		print_seq(seq);
 		if (opts & SHOW_RELATIVE_TIME)
 			print_relative_time(t);
 		if (opts & SHOW_PID)
@@ -270,7 +270,7 @@ void print_syscall(const struct traced_task * t, long opts, int in_syscall)
 		print_syscall_args(t, opts);
 	} else {
 		if (opts & VIEW_TIMELINE) {
-			print_seq(t);
+			print_seq(seq);
 			if (opts & SHOW_RELATIVE_TIME)
 				print_relative_time(t);
 			if (opts & SHOW_PID)

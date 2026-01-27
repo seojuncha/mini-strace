@@ -49,17 +49,17 @@ int exiting(const struct traced_task * t)
 	return (t->status & HAS_NO_RETURN) ? 1 : t->status & IN_SYSCALL;
 }
 
-void done_entering(struct traced_task * t)
+void done_entering(struct traced_task * t, int * seq)
 {
 	t->status |= IN_SYSCALL;
-	t->seq++;
+	(*seq)++;
 }
 
-void done_exiting(struct traced_task * t, long opts)
+void done_exiting(struct traced_task * t, int * seq, long opts)
 {
 	t->status &= ~IN_SYSCALL;
 	if (opts & VIEW_TIMELINE)
-		t->seq++;
+		(*seq)++;
 }
 
 #define WORD_BYTES sizeof(long)
@@ -81,6 +81,10 @@ void read_memory(struct traced_task * t, unsigned long reg_addr, size_t sz)
 	}
 }
 
+void decode_event(struct traced_task * t, int event)
+{
+}
+
 int decode_syscall_enter(struct traced_task * t, long opts)
 {
 	struct user_regs_struct *reg = (struct user_regs_struct *)(t->user_regs);
@@ -98,6 +102,10 @@ int decode_syscall_enter(struct traced_task * t, long opts)
 	strncpy(t->syscall_name, sn, strlen(sn) + 1);
 
 	switch (t->nr) {
+		case SYS_execve:
+			read_memory(t, reg->rdi, 64);
+			break;
+
 		case SYS_write:
 			read_memory(t, reg->rsi, reg->rdx);
 			break;

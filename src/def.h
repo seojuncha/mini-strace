@@ -27,7 +27,6 @@
 
 struct traced_task
 {
-	int seq;
 	int pid;
 	int tid;
 	int status;
@@ -46,6 +45,8 @@ struct traced_task
 
 struct task_block
 {
+	int seq;
+
 	pid_t tracee_pid;
 	long trace_opts;
 
