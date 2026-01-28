@@ -156,6 +156,11 @@ void print_syscall_args(const struct traced_task * t, long opts)
 			print_args_digit(1, "stack", reg->rsi, digit_opt_hex);
 			break;
 		
+		case SYS_clone3:
+			print_args_digit(1, "cl_args", reg->rdi, digit_opt_hex);
+			print_args_digit(0, "size", reg->rsi, digit_opt_dec);
+			break;
+		
 		case SYS_access:
 			print_args_str(1, "pathname", t->mem_buf);
 			print_args_digit(0, "mode", reg->rsi, digit_opt_hex);
@@ -253,7 +258,7 @@ void print_syscall_ret(const struct traced_task * t, long opts)
 	print_ret_detail(t->nr, t->syscall_ret);
 
 newline:
-        (opts & VIEW_TIMELINE) ? fprintf(stderr, "\n\n") : fprintf(stderr, "\n");
+	fprintf(stderr, "\n");
 }
 
 void print_syscall(const struct traced_task * t, int seq, long opts, int in_syscall)

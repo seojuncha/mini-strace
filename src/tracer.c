@@ -13,33 +13,36 @@
 #include "syscall.h"
 #include "print_syscall.h"
 
-static void handle_event(struct task_block *tb, pid_t pid, int ws) {
+static void handle_event(struct task_block *tb, pid_t pid, int ws)
+{
 	struct traced_task *t = get(tb, pid);
 	unsigned long ret = 0;
 
 	switch (ws) {
 		case (SIGTRAP | (PTRACE_EVENT_EXEC << 8)):
 			ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
-			printf("[  debug] event_exec: %lu\n", ret);
+			printf("[  debug] %d event_exec: %lu\n", pid, ret);
 			decode_event(t, PTRACE_EVENT_EXEC);
 			break;
 
 		case (SIGTRAP | (PTRACE_EVENT_FORK << 8)):
 			ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
-			printf("[  debug] event_fork: %lu\n", ret);
-			add_new_task(tb, ret);
+			printf("[  debug] %d event_fork: %lu\n", pid, ret);
+			add_new_task(tb, pid, ret);
+			ptrace(PTRACE_SYSCALL, ret, 0L, 0L);
 			break;
 
 		case (SIGTRAP | (PTRACE_EVENT_CLONE << 8)):
 			ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
-			printf("[  debug] event_clone: %lu\n", ret);
-			add_new_task(tb, ret);
+			printf("[  debug] %d event_clone: %lu\n", pid, ret);
+			add_new_task(tb, pid, ret);
+			ptrace(PTRACE_SYSCALL, ret, 0L, 0L);
 			break;
 
 		case (SIGTRAP | (PTRACE_EVENT_EXIT << 8)):
 			ptrace(PTRACE_GETEVENTMSG, pid, 0L, &ret);
 			printf("[  debug] event_exit: %d\n", (int)ret);
-			fprintf(stderr, "---- child %d exited (code=%d) ----\n", pid, (int)ret);
+			fprintf(stderr, "---- child %d will be exited (code=%d) ----\n", pid, (int)ret);
 			break;
 
 		default:
@@ -79,7 +82,7 @@ int init_tracee(struct task_block * tb, pid_t tracee_pid)
 	tb->trace_opts = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXIT | PTRACE_O_TRACEVFORK;
 	/* add the first child of tracer, tracee */
 	if (WIFSTOPPED(ws) && (WSTOPSIG(ws) == SIGSTOP)) {
-		add_new_task(tb, pid);
+		add_new_task(tb, pid, pid);
 		ptrace(PTRACE_SETOPTIONS, pid, 0L, tb->trace_opts);
 		ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
 	}
@@ -92,7 +95,7 @@ int dispatch_loop(struct task_block * tb)
 	struct traced_task *t;
 
 	while (alive_tasks(tb)) {
-		int pid = waitpid(-1, &ws, __WALL);
+		pid_t pid = waitpid(-1, &ws, __WALL);
 
 		if (pid == -1 && errno != 0) {
 			perror("waidpid 2");
@@ -136,7 +139,8 @@ int dispatch_loop(struct task_block * tb)
 				printf("[    err] unknown stop signal: %d\n", WSTOPSIG(ws));
 				break;
 			}
-			reenter_syscall(t);
+			ptrace(PTRACE_SYSCALL, pid, 0L, 0L);
+			// reenter_syscall(tb);
 		}
 	}
 	printf("normal terminated\n");

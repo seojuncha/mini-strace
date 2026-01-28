@@ -15,7 +15,7 @@ static const char *syscall_name(unsigned long nr)
 		case SYS_write: return "write";
 		case SYS_open: return "open";
 		case SYS_openat: return "openat";
-		case SYS_access: return "acceess";
+		case SYS_access: return "access";
 		case SYS_close: return "close";
 		case SYS_accept: return "accept";
 		case SYS_pread64: return "pread64";
@@ -25,6 +25,7 @@ static const char *syscall_name(unsigned long nr)
 		case SYS_munmap: return "munmap";
 		case SYS_fstat: return "fstat";
 		case SYS_clone: return "clone";
+		case SYS_clone3: return "clone3";
 		case SYS_fork: return "fork";
 		case SYS_vfork: return "vfork";
 		case SYS_execve: return "execve";
@@ -155,12 +156,12 @@ int decode_syscall_exit(struct traced_task * t, long opts)
 	return 0;
 }
 
-void reenter_syscall(const struct traced_task * t)
+void reenter_syscall(const struct task_block * tb)
 {
-	ptrace(PTRACE_SYSCALL, t->pid, 0L, 0L);
+	// ptrace(PTRACE_SYSCALL, tb->next_syscall_pid, 0L, 0L);
 }
 
 void set_trace_options(struct traced_task * t, long opts)
 {
-	ptrace(PTRACE_SETOPTIONS, t->pid, 0L, opts);
+	ptrace(PTRACE_SETOPTIONS, t->tid, 0L, opts);
 }

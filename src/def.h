@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <time.h>
 
-#define MAX_TASKS 5
+#define MAX_TASKS 10
 
 /* traced_task options */
 #define IN_SYSCALL 0x01
@@ -58,7 +58,7 @@ struct task_block
 
 
 /* new interfaces */
-void add_new_task(struct task_block * tb, pid_t pid);
+void add_new_task(struct task_block * tb, pid_t pid, pid_t tid);
 void remove_task(struct task_block * tb, pid_t pid);
 struct traced_task *get(struct task_block * tb, pid_t pid);
 int alive_tasks(const struct task_block * tb);
