@@ -25,42 +25,47 @@
 #define YELLOW "\033[0;33m"
 #define RESET "\033[0m"
 
-struct traced_task
-{
-	int pid;
-	int tid;
-	int status;
-
-	int nr;
-	char syscall_name[16];
-	long long syscall_ret;
-
-	void * user_regs;
-	char * mem_buf;
-	size_t mem_sz;
-
-	struct timespec last_entry_ts;
-	struct timespec entry_ts;
+struct syscall_args {
+  unsigned long arg1; 
+  unsigned long arg2; 
+  unsigned long arg3; 
+  unsigned long arg4; 
+  unsigned long arg5; 
 };
 
-struct task_block
-{
-	int seq;
+struct traced_task {
+  int pid;
+  int tid;
+  int status;
 
-	pid_t tracee_pid;
-	long trace_opts;
+  int nr;
+  char syscall_name[16];
+  long long syscall_ret;
+  struct syscall_args args;
 
-	// in here??? 
-	int opts;
+  void *user_regs;
+  char *mem_buf;
+  size_t mem_sz;
 
-	struct traced_task tt[MAX_TASKS];
+  struct timespec last_entry_ts;
+  struct timespec entry_ts;
 };
 
+struct task_block {
+  int seq;
 
-/* new interfaces */
-void add_new_task(struct task_block * tb, pid_t pid, pid_t tid);
-void remove_task(struct task_block * tb, pid_t pid);
-struct traced_task *get(struct task_block * tb, pid_t pid);
-int alive_tasks(const struct task_block * tb);
+  pid_t tracee_pid;
+  long trace_opts;
+
+  // in here??? 
+  int opts;
+
+  struct traced_task tt[MAX_TASKS];
+};
+
+void add_new_task(struct task_block *tb, pid_t pid, pid_t tid);
+void remove_task(struct task_block *tb, pid_t pid);
+struct traced_task *get(struct task_block *tb, pid_t pid);
+int alive_tasks(const struct task_block *tb);
 
 #endif

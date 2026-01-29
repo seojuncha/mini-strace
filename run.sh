@@ -10,7 +10,7 @@ cd tests
 
 cd ..
 
-gcc -Wall -std=gnu11 src/def.c src/print_syscall.c src/syscall.c src/tracer.c src/main.c -o mini-strace
+gcc -Wall -std=gnu11 src/def.c src/syscall_map_x86_64.c src/print_syscall.c src/syscall.c src/tracer.c src/main.c -o mini-strace
 # ./mini-strace /workspace/src/linux/mini-strace/tests/t01_write_ok
 # ./mini-strace /workspace/src/linux/mini-strace/tests/t02_open_fail
 # ./mini-strace /workspace/src/linux/mini-strace/tests/t04_fork_basic
